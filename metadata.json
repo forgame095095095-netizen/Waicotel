@@ -1,0 +1,6 @@
+{
+  "name": "Wai Kotel",
+  "description": "Исламская система беспроцентных ротационных сбережений (Вай Котел / ROSCA / Кард аль-Хасан) с рейтингом доверия Аманат и барабаном жеребьевки",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
