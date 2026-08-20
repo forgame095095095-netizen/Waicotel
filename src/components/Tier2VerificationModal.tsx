@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   ShieldCheck, 
   UserCheck, 
@@ -16,7 +16,9 @@ import {
   Lock,
   Eye,
   FileCheck2,
-  Scale
+  Scale,
+  RefreshCw,
+  X
 } from 'lucide-react';
 import { UserProfile, RelationType, VerificationRequest } from '../types';
 import { playButtonTap, playSuccessChime } from '../utils/audio';
@@ -27,9 +29,40 @@ interface Tier2VerificationModalProps {
   user: UserProfile;
   targetPoolTitle?: string;
   targetPoolAmount?: number;
-  onSubmitRequest: (request: VerificationRequest, updatedUser: UserProfile) => void;
-  onFastApprove: (updatedUser: UserProfile) => void;
+  onSubmitVerification?: (request: VerificationRequest, updatedUser: UserProfile) => void;
+  onSubmitRequest?: (request: VerificationRequest, updatedUser: UserProfile) => void;
+  onFastApprove?: (updatedUser?: UserProfile) => void;
 }
+
+// Utility to format phone with +7 (9XX) XXX-XX-XX mask
+const formatPhoneMask = (input: string): string => {
+  const digits = input.replace(/\D/g, '');
+  if (!digits) return '';
+  
+  // Normalize starting digit
+  let normalizedDigits = digits;
+  if (normalizedDigits.startsWith('7') || normalizedDigits.startsWith('8')) {
+    normalizedDigits = normalizedDigits.substring(1);
+  }
+  
+  // Cut to 10 digits
+  normalizedDigits = normalizedDigits.substring(0, 10);
+  
+  let formatted = '+7';
+  if (normalizedDigits.length > 0) {
+    formatted += ' (' + normalizedDigits.substring(0, 3);
+  }
+  if (normalizedDigits.length >= 3) {
+    formatted += ') ' + normalizedDigits.substring(3, 6);
+  }
+  if (normalizedDigits.length >= 6) {
+    formatted += '-' + normalizedDigits.substring(6, 8);
+  }
+  if (normalizedDigits.length >= 8) {
+    formatted += '-' + normalizedDigits.substring(8, 10);
+  }
+  return formatted;
+};
 
 export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
   isOpen,
@@ -37,15 +70,18 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
   user,
   targetPoolTitle = 'Грозный Авто-Котел №4',
   targetPoolAmount = 360000,
+  onSubmitVerification,
   onSubmitRequest,
   onFastApprove,
 }) => {
+  const submitHandler = onSubmitVerification || onSubmitRequest;
+
   const [currentStep, setCurrentStep] = useState<'intro' | 'guarantor' | 'passports' | 'contract' | 'submitted' | 'approved'>(
-    user?.verificationStatus === 'pending' ? 'submitted' : user?.verificationStatus === 'verified' ? 'approved' : 'intro'
+    user?.verificationStatus === 'pending' ? 'submitted' : user?.verificationStatus === 'verified' ? 'approved' : 'guarantor'
   );
 
   // Guarantor fields
-  const [guarantorName, setGuarantorName] = useState(user?.guarantorName || 'Ислам Умаров');
+  const [guarantorName, setGuarantorName] = useState(user?.guarantorName || 'Даудов Ибрагим Ахмедович');
   const [guarantorPhone, setGuarantorPhone] = useState(user?.guarantorPhone || '+7 (928) 714-33-22');
   const [guarantorRelation, setGuarantorRelation] = useState<RelationType>(user?.guarantorRelation || 'Брат');
   
@@ -70,14 +106,28 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
   const [agreeTerms, setAgreeTerms] = useState(true);
   const [agreeKafilahResponsibility, setAgreeKafilahResponsibility] = useState(true);
 
+  // Hidden file inputs
+  const userFileInputRef = useRef<HTMLInputElement | null>(null);
+  const guarantorFileInputRef = useRef<HTMLInputElement | null>(null);
+
   if (!isOpen) return null;
 
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    const formatted = formatPhoneMask(raw);
+    setGuarantorPhone(formatted);
+    setIsGuarantorSmsVerified(false);
+    setGuarantorSmsSent(false);
+  };
+
   const handleSendGuarantorSms = () => {
+    if (!guarantorPhone || guarantorPhone.length < 10) return;
     setIsSendingSms(true);
     playButtonTap();
     setTimeout(() => {
       setIsSendingSms(false);
       setGuarantorSmsSent(true);
+      setGuarantorOtpCode('4821'); // Auto pre-fill simulation for user convenience
     }, 600);
   };
 
@@ -85,6 +135,23 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
     if (guarantorOtpCode.length < 4) return;
     playSuccessChime();
     setIsGuarantorSmsVerified(true);
+  };
+
+  const handleFileUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setter: (url: string) => void
+  ) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      playButtonTap();
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setter(event.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmitToAdmin = () => {
@@ -118,7 +185,7 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
         name: guarantorName,
         phone: guarantorPhone,
         relation: guarantorRelation,
-        isSmsConfirmed: true,
+        isSmsConfirmed: isGuarantorSmsVerified || true,
         smsConfirmedAt: nowStr,
         passport: {
           seriesNumber: guarantorPassportSeries,
@@ -155,8 +222,12 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
       hasSignedContract: true,
     };
 
-    onSubmitRequest(newRequest, updatedUser);
-    setCurrentStep('submitted');
+    if (submitHandler) {
+      submitHandler(newRequest, updatedUser);
+    }
+    
+    // Close modal to immediately return user to dashboard/profile with toast notification
+    onClose();
   };
 
   const handleInstantDemoApprove = () => {
@@ -181,241 +252,193 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
       guarantorPhone,
       guarantorRelation,
       verificationApprovedAt: nowStr,
-      amanaScore: Math.max(user.amanaScore, 125),
+      amanaScore: Math.max(user?.amanaScore || 0, 125),
       hasSignedContract: true,
     };
 
-    onFastApprove(updatedUser);
+    if (onFastApprove) {
+      onFastApprove(updatedUser);
+    }
     setCurrentStep('approved');
   };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-3 sm:p-6 flex justify-center items-start sm:items-center py-6 sm:py-10">
-      <div className="relative w-full max-w-2xl bg-[#091511] border border-[#d4af37]/35 rounded-2xl p-5 sm:p-7 shadow-2xl text-slate-200 my-auto">
+      <div className="relative w-full max-w-2xl bg-[#091511] border border-[#d4af37]/45 rounded-3xl p-5 sm:p-7 shadow-2xl text-slate-200 my-auto">
         
         {/* Header Ribbon */}
         <div className="flex items-center justify-between border-b border-[#d4af37]/20 pb-4 mb-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#103b2e] to-[#071511] border border-[#d4af37]/50 flex items-center justify-center text-[#d4af37] shadow-inner">
-              <ShieldCheck className="w-5 h-5 text-[#fef08a]" />
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-br from-[#103b2e] to-[#071511] border border-[#d4af37]/60 flex items-center justify-center text-[#d4af37] shadow-inner shrink-0">
+              <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-[#fef08a]" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded-full bg-[#d4af37]/20 text-[#fef08a] border border-[#d4af37]/40 text-[10px] font-bold uppercase">
-                  Уровень 2 • Пулы 300k+ ₽
+                  Уровень 2 • Снятие лимита 300 000 ₽
                 </span>
-                <span className="text-xs text-emerald-400 font-medium">
-                  {targetPoolAmount.toLocaleString('ru-RU')} ₽
+                <span className="text-xs text-emerald-400 font-medium font-mono-nums">
+                  до {targetPoolAmount.toLocaleString('ru-RU')} ₽
                 </span>
               </div>
               <h2 className="text-lg sm:text-xl font-bold text-white font-display mt-0.5">
                 {currentStep === 'intro' && 'Верификация для пулов от 300 000 ₽'}
-                {currentStep === 'guarantor' && 'Шаг 1: Поручитель (Кафил) & SMS'}
-                {currentStep === 'passports' && 'Шаг 2: Паспорта заявителя и поручителя'}
-                {currentStep === 'contract' && 'Шаг 3: Договор поручительства Аманат'}
-                {currentStep === 'submitted' && 'Заявка в ожидании проверки'}
-                {currentStep === 'approved' && 'Верификация (Уровень 2) подтверждена!'}
+                {currentStep === 'guarantor' && 'Верификация поручителя (Кафил)'}
+                {currentStep === 'passports' && 'Паспорта заявителя и поручителя'}
+                {currentStep === 'contract' && 'Договор поручительства Аманат'}
+                {currentStep === 'submitted' && 'Заявка на проверке у администратора ⏳'}
+                {currentStep === 'approved' && 'Верификация (Уровень 2) подтверждена! 🛡️'}
               </h2>
             </div>
           </div>
 
           <button
             onClick={() => { playButtonTap(); onClose(); }}
-            className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
+            className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition-colors"
+            title="Закрыть"
           >
-            ✕
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Progress Tracker */}
+        {/* Navigation Step Tabs */}
         {currentStep !== 'submitted' && currentStep !== 'approved' && (
-          <div className="flex items-center justify-between gap-1 mb-6 bg-[#04100c] p-2 rounded-xl border border-slate-800 text-xs">
+          <div className="grid grid-cols-3 gap-1.5 mb-6 bg-[#04100c] p-1.5 rounded-2xl border border-slate-800 text-xs">
             <button
-              onClick={() => setCurrentStep('intro')}
-              className={`flex-1 py-1.5 px-2 rounded-lg text-center font-medium transition-all ${
-                currentStep === 'intro' ? 'bg-[#d4af37] text-black font-bold' : 'text-slate-400'
+              onClick={() => { playButtonTap(); setCurrentStep('guarantor'); }}
+              className={`py-2 px-2 rounded-xl text-center font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                currentStep === 'guarantor' 
+                  ? 'bg-gradient-to-r from-[#d4af37] to-[#f59e0b] text-black font-bold shadow-md' 
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
             >
-              Инфо
+              <span>1. Поручитель</span>
+              {isGuarantorSmsVerified && <Check className="w-3.5 h-3.5 text-emerald-950 font-bold" />}
             </button>
-            <span className="text-slate-600">→</span>
+
             <button
-              onClick={() => setCurrentStep('guarantor')}
-              className={`flex-1 py-1.5 px-2 rounded-lg text-center font-medium transition-all ${
-                currentStep === 'guarantor' ? 'bg-[#d4af37] text-black font-bold' : 'text-slate-400'
+              onClick={() => { playButtonTap(); setCurrentStep('passports'); }}
+              className={`py-2 px-2 rounded-xl text-center font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                currentStep === 'passports' 
+                  ? 'bg-gradient-to-r from-[#d4af37] to-[#f59e0b] text-black font-bold shadow-md' 
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
             >
-              1. Поручитель
+              <span>2. Паспорта</span>
             </button>
-            <span className="text-slate-600">→</span>
+
             <button
-              onClick={() => setCurrentStep('passports')}
-              className={`flex-1 py-1.5 px-2 rounded-lg text-center font-medium transition-all ${
-                currentStep === 'passports' ? 'bg-[#d4af37] text-black font-bold' : 'text-slate-400'
+              onClick={() => { playButtonTap(); setCurrentStep('contract'); }}
+              className={`py-2 px-2 rounded-xl text-center font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                currentStep === 'contract' 
+                  ? 'bg-gradient-to-r from-[#d4af37] to-[#f59e0b] text-black font-bold shadow-md' 
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
             >
-              2. Паспорта
+              <span>3. Договор</span>
             </button>
-            <span className="text-slate-600">→</span>
-            <button
-              onClick={() => setCurrentStep('contract')}
-              className={`flex-1 py-1.5 px-2 rounded-lg text-center font-medium transition-all ${
-                currentStep === 'contract' ? 'bg-[#d4af37] text-black font-bold' : 'text-slate-400'
-              }`}
-            >
-              3. Договор
-            </button>
-          </div>
-        )}
-
-        {/* STEP 0: INTRO & HIGH-VALUE POOL TRIGGER EXPLANATION */}
-        {currentStep === 'intro' && (
-          <div className="space-y-4">
-            <div className="bg-gradient-to-r from-amber-950/70 via-[#132a1f] to-amber-950/70 border border-[#d4af37]/40 p-4 rounded-xl space-y-2">
-              <div className="flex items-center gap-2 text-[#fef08a] font-bold text-sm">
-                <AlertTriangle className="w-4 h-4 text-[#d4af37]" />
-                <span>Ограничение суммы: требуется статус Уровень 2</span>
-              </div>
-              <p className="text-xs text-slate-200 leading-relaxed">
-                Вы пытаетесь открыть или вступить в котел с общим пулом <strong>{targetPoolAmount.toLocaleString('ru-RU')} ₽</strong>.
-                В соответствии с шариатскими стандартами и регламентом безопасности сервиса «Вай Котел», суммы свыше 300 000 ₽ требуют подтверждения поручителя и паспортной верификации.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="bg-[#051711] border border-slate-800 p-3 rounded-xl space-y-1">
-                <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <PhoneCall className="w-3.5 h-3.5 text-[#d4af37]" />
-                  <span>Поручитель (Кафил)</span>
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  Мгновенное подтверждение номера телефона близкого поручителя по SMS
-                </p>
-              </div>
-
-              <div className="bg-[#051711] border border-slate-800 p-3 rounded-xl space-y-1">
-                <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <FileCheck2 className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Сверка паспортов</span>
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  Безопасная загрузка скана паспорта заявителя и поручителя
-                </p>
-              </div>
-
-              <div className="bg-[#051711] border border-slate-800 p-3 rounded-xl space-y-1">
-                <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <Scale className="w-3.5 h-3.5 text-[#fef08a]" />
-                  <span>Договор Аманат</span>
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  Электронная подпись шариатского договора взаимопомощи
-                </p>
-              </div>
-            </div>
-
-            <div className="pt-2 flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => { playButtonTap(); onClose(); }}
-                className="px-4 py-2.5 rounded-xl border border-slate-700 text-xs font-semibold text-slate-300 hover:bg-slate-800"
-              >
-                Вернуться к малым пулам
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { playButtonTap(); setCurrentStep('guarantor'); }}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#f59e0b] hover:from-[#e5bd46] hover:to-[#d97706] text-black font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg"
-              >
-                <span>Начать верификацию (Уровень 2)</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
           </div>
         )}
 
         {/* STEP 1: GUARANTOR & SMS CONFIRMATION */}
         {currentStep === 'guarantor' && (
           <div className="space-y-4">
-            <div className="bg-[#051711] border border-slate-800 p-3 rounded-xl text-xs text-slate-300">
-              Укажите близкого родственника или надежного человека, который выступает вашим поручителем (Кафилом). Мы отправим ему SMS-код для подтверждения согласия.
+            <div className="bg-gradient-to-r from-[#051711] to-[#0a271d] border border-[#d4af37]/30 p-3.5 rounded-2xl text-xs text-slate-300 space-y-1">
+              <div className="flex items-center gap-2 text-[#fef08a] font-bold">
+                <ShieldCheck className="w-4 h-4 text-[#d4af37]" />
+                <span>Шариатское поручительство (Кафаля)</span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Для участия в котлах с пулом свыше 300 000 ₽ укажите совершеннолетнего поручителя. На его номер отправляется проверочный SMS-код.
+              </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* Guarantor Name */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  ФИО Поручителя (Кафила):
+                <label className="block text-xs font-semibold text-slate-200 mb-1.5">
+                  ФИО поручителя:
                 </label>
                 <input
                   type="text"
                   value={guarantorName}
                   onChange={(e) => setGuarantorName(e.target.value)}
-                  placeholder="Ислам Умаров"
-                  className="w-full bg-[#030e0a] border border-slate-700 focus:border-[#d4af37] px-3 py-2 rounded-xl text-xs text-white focus:outline-none"
+                  placeholder="Даудов Ибрагим Ахмедович"
+                  className="w-full bg-[#030e0a] border border-slate-700 focus:border-[#d4af37] px-3.5 py-2.5 rounded-xl text-xs text-white focus:outline-none transition-colors"
                   required
                 />
               </div>
 
+              {/* Guarantor Relation */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-200 mb-1.5">
                   Кем приходится:
                 </label>
                 <select
                   value={guarantorRelation}
                   onChange={(e) => setGuarantorRelation(e.target.value as RelationType)}
-                  className="w-full bg-[#030e0a] border border-slate-700 focus:border-[#d4af37] px-3 py-2 rounded-xl text-xs text-white focus:outline-none"
+                  className="w-full bg-[#030e0a] border border-slate-700 focus:border-[#d4af37] px-3.5 py-2.5 rounded-xl text-xs text-white focus:outline-none transition-colors cursor-pointer"
                 >
                   <option value="Брат">Брат</option>
                   <option value="Отец">Отец</option>
                   <option value="Дядя">Дядя</option>
-                  <option value="Родственник">Родственник</option>
+                  <option value="Друг">Друг</option>
                   <option value="Близкий друг">Близкий друг</option>
-                  <option value="Коллега">Коллега / Партнер</option>
+                  <option value="Коллега">Коллега</option>
+                  <option value="Родственник">Родственник</option>
                 </select>
               </div>
             </div>
 
+            {/* Guarantor Phone + Send SMS */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-200 mb-1.5">
                 Номер телефона поручителя:
               </label>
               <div className="flex gap-2">
                 <input
                   type="tel"
                   value={guarantorPhone}
-                  onChange={(e) => {
-                    setGuarantorPhone(e.target.value);
-                    setIsGuarantorSmsVerified(false);
-                    setGuarantorSmsSent(false);
-                  }}
-                  placeholder="+7 (928) 714-33-22"
-                  className="flex-1 bg-[#030e0a] border border-slate-700 focus:border-[#d4af37] px-3 py-2 rounded-xl text-xs text-white font-mono focus:outline-none"
+                  onChange={handlePhoneChange}
+                  placeholder="+7 (928) 000-00-00"
+                  className="flex-1 bg-[#030e0a] border border-slate-700 focus:border-[#d4af37] px-3.5 py-2.5 rounded-xl text-xs text-white font-mono focus:outline-none transition-colors"
                   required
                 />
                 <button
                   type="button"
                   onClick={handleSendGuarantorSms}
                   disabled={isSendingSms || isGuarantorSmsVerified}
-                  className="px-3 py-2 rounded-xl bg-[#0d2a20] border border-[#d4af37]/40 text-[#fef08a] hover:bg-[#133b2e] text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 disabled:opacity-50"
+                  className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                    isGuarantorSmsVerified
+                      ? 'bg-emerald-950/80 border border-emerald-500/50 text-emerald-300'
+                      : guarantorSmsSent
+                      ? 'bg-amber-500 text-black shadow-md'
+                      : 'bg-gradient-to-r from-[#d4af37] to-[#f59e0b] hover:from-[#e5bd46] hover:to-[#d97706] text-black shadow-md'
+                  }`}
                 >
-                  <Send className="w-3 h-3" />
-                  <span>{isGuarantorSmsVerified ? 'Подтвержден ✓' : guarantorSmsSent ? 'Код отправлен' : 'Отправить SMS'}</span>
+                  <Send className="w-3.5 h-3.5" />
+                  <span>
+                    {isGuarantorSmsVerified
+                      ? 'Подтвержден ✓'
+                      : guarantorSmsSent
+                      ? 'Код отправлен'
+                      : 'Отправить SMS поручителю'}
+                  </span>
                 </button>
               </div>
             </div>
 
-            {/* Guarantor SMS OTP Box */}
+            {/* SMS 4-Digit Code Confirmation Box */}
             {guarantorSmsSent && !isGuarantorSmsVerified && (
-              <div className="bg-[#030e0a] border border-amber-500/40 p-3 rounded-xl space-y-2">
+              <div className="bg-[#030e0a] border border-amber-500/50 p-3.5 rounded-2xl space-y-2.5 animate-fadeIn">
                 <div className="flex items-center justify-between text-xs text-amber-300">
-                  <span>Введите SMS-код, полученный поручителем:</span>
+                  <span className="font-semibold">Введите 4-значный SMS-код из сообщения:</span>
                   <button
                     type="button"
-                    onClick={() => { playButtonTap(); setGuarantorOtpCode('7777'); }}
-                    className="text-[10px] text-[#fef08a] underline"
+                    onClick={() => { playButtonTap(); setGuarantorOtpCode('4821'); }}
+                    className="text-[11px] text-[#fef08a] underline decoration-dotted hover:text-white"
                   >
-                    Тест-код: <strong>7777</strong>
+                    Тест-код: <strong>4821</strong>
                   </button>
                 </div>
                 <div className="flex gap-2">
@@ -424,65 +447,72 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
                     maxLength={4}
                     value={guarantorOtpCode}
                     onChange={(e) => setGuarantorOtpCode(e.target.value)}
-                    placeholder="7777"
-                    className="w-32 bg-[#091511] border border-[#d4af37] text-center font-mono font-bold text-sm text-[#fef08a] px-3 py-1.5 rounded-lg focus:outline-none"
+                    placeholder="4821"
+                    className="w-36 bg-[#091511] border border-[#d4af37] text-center font-mono font-bold text-base text-[#fef08a] px-3 py-2 rounded-xl focus:outline-none tracking-widest"
                   />
                   <button
                     type="button"
                     onClick={handleVerifyGuarantorOtp}
-                    className="px-4 py-1.5 rounded-lg bg-[#d4af37] text-black font-bold text-xs hover:bg-[#f59e0b] transition-all"
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#f59e0b] text-black font-bold text-xs hover:opacity-90 transition-all shadow-md"
                   >
-                    Подтвердить
+                    Подтвердить код
                   </button>
                 </div>
               </div>
             )}
 
             {isGuarantorSmsVerified && (
-              <div className="p-2.5 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Номер поручителя {guarantorPhone} успешно верифицирован по SMS!</span>
+              <div className="p-3 rounded-2xl bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 text-xs flex items-center gap-2.5 shadow-md">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                <div>
+                  <strong className="block text-white">Номер поручителя подтвержден!</strong>
+                  <span className="text-[11px] text-emerald-300/90">
+                    {guarantorPhone} • Согласие зафиксировано в протоколе Вай Котел
+                  </span>
+                </div>
               </div>
             )}
 
-            <div className="pt-2 flex items-center justify-between gap-3">
+            <div className="pt-3 flex items-center justify-between gap-3 border-t border-slate-800/80">
               <button
                 type="button"
-                onClick={() => setCurrentStep('intro')}
-                className="px-4 py-2 rounded-xl border border-slate-700 text-xs font-semibold text-slate-300 hover:bg-slate-800"
+                onClick={() => { playButtonTap(); onClose(); }}
+                className="px-4 py-2.5 rounded-xl border border-slate-700 text-xs font-semibold text-slate-300 hover:bg-slate-800"
               >
-                Назад
+                Отмена
               </button>
 
               <button
                 type="button"
                 onClick={() => { playButtonTap(); setCurrentStep('passports'); }}
-                className="py-2.5 px-5 rounded-xl bg-[#d4af37] text-black font-bold text-xs flex items-center gap-1.5 shadow-md hover:bg-[#f59e0b] transition-all"
+                className="py-2.5 px-6 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#f59e0b] hover:from-[#e5bd46] hover:to-[#d97706] text-black font-bold text-xs flex items-center gap-2 shadow-lg transition-all"
               >
-                <span>Далее: Паспорта</span>
+                <span>Далее: Паспортные данные</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
         )}
 
-        {/* STEP 2: PASSPORTS USER & GUARANTOR */}
+        {/* STEP 2: PASSPORTS (USER + GUARANTOR) */}
         {currentStep === 'passports' && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               
               {/* User Passport Card */}
-              <div className="bg-[#051711] border border-slate-800 p-3.5 rounded-xl space-y-3">
+              <div className="bg-[#051711] border border-slate-800 p-4 rounded-2xl space-y-3">
                 <div className="flex items-center justify-between text-xs font-bold text-white border-b border-slate-800 pb-2">
                   <span className="flex items-center gap-1.5">
-                    <UserCheck className="w-3.5 h-3.5 text-[#d4af37]" />
-                    <span>Паспорт заявителя:</span>
+                    <UserCheck className="w-4 h-4 text-[#d4af37]" />
+                    <span>Паспорт участника:</span>
                   </span>
-                  <span className="text-[10px] text-emerald-400 font-normal">Мансур Умаров</span>
+                  <span className="text-[10px] text-emerald-400 font-mono">
+                    {user?.fullName || 'Мансур Умаров'}
+                  </span>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] text-slate-300 mb-1">
+                  <label className="block text-[11px] text-slate-300 mb-1 font-semibold">
                     Серия и номер:
                   </label>
                   <input
@@ -490,12 +520,12 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
                     value={userPassportSeries}
                     onChange={(e) => setUserPassportSeries(e.target.value)}
                     placeholder="96 14 883921"
-                    className="w-full bg-[#030e0a] border border-slate-700 px-3 py-1.5 rounded-lg text-xs text-white font-mono"
+                    className="w-full bg-[#030e0a] border border-slate-700 focus:border-[#d4af37] px-3 py-2 rounded-xl text-xs text-white font-mono focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] text-slate-300 mb-1">
+                  <label className="block text-[11px] text-slate-300 mb-1 font-semibold">
                     Кем выдан:
                   </label>
                   <input
@@ -503,42 +533,59 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
                     value={userPassportIssuedBy}
                     onChange={(e) => setUserPassportIssuedBy(e.target.value)}
                     placeholder="МВД по Чеченской Республике"
-                    className="w-full bg-[#030e0a] border border-slate-700 px-3 py-1.5 rounded-lg text-xs text-white"
+                    className="w-full bg-[#030e0a] border border-slate-700 focus:border-[#d4af37] px-3 py-2 rounded-xl text-xs text-white focus:outline-none"
                   />
                 </div>
 
-                {/* Upload Dropzone Preview */}
+                {/* Upload Zone */}
                 <div>
-                  <label className="block text-[11px] text-slate-300 mb-1">
-                    Скан главной страницы:
+                  <label className="block text-[11px] text-slate-300 mb-1 font-semibold">
+                    Фото / скан паспорта:
                   </label>
-                  <div className="relative rounded-lg border border-dashed border-[#d4af37]/40 bg-[#020b08] p-2 flex items-center gap-2.5">
+                  <input
+                    type="file"
+                    ref={userFileInputRef}
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleFileUpload(e, setUserPassportPhoto)}
+                  />
+                  <div 
+                    onClick={() => userFileInputRef.current?.click()}
+                    className="group relative rounded-xl border border-dashed border-[#d4af37]/50 bg-[#020b08] p-2.5 flex items-center gap-3 cursor-pointer hover:border-[#d4af37] transition-all"
+                  >
                     <img
                       src={userPassportPhoto}
                       alt="User Passport"
                       referrerPolicy="no-referrer"
-                      className="w-12 h-12 object-cover rounded border border-slate-700 shrink-0"
+                      className="w-12 h-12 object-cover rounded-lg border border-slate-700 shrink-0 group-hover:scale-105 transition-transform"
                     />
-                    <div className="text-[10px] text-slate-400 leading-tight">
-                      <strong className="text-emerald-400 block font-semibold">passport_umarov_m.jpg</strong>
-                      <span>Загружено • Проверено</span>
+                    <div className="min-w-0 flex-1">
+                      <strong className="text-xs text-emerald-400 block font-semibold truncate">
+                        passport_user.jpg
+                      </strong>
+                      <span className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                        <Upload className="w-3 h-3 text-[#d4af37]" />
+                        <span>Нажмите для смены файла</span>
+                      </span>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Guarantor Passport Card */}
-              <div className="bg-[#051711] border border-slate-800 p-3.5 rounded-xl space-y-3">
+              <div className="bg-[#051711] border border-slate-800 p-4 rounded-2xl space-y-3">
                 <div className="flex items-center justify-between text-xs font-bold text-white border-b border-slate-800 pb-2">
                   <span className="flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
                     <span>Паспорт поручителя:</span>
                   </span>
-                  <span className="text-[10px] text-emerald-400 font-normal">{guarantorName}</span>
+                  <span className="text-[10px] text-emerald-400 font-mono truncate max-w-[120px]">
+                    {guarantorName}
+                  </span>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] text-slate-300 mb-1">
+                  <label className="block text-[11px] text-slate-300 mb-1 font-semibold">
                     Серия и номер:
                   </label>
                   <input
@@ -546,12 +593,12 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
                     value={guarantorPassportSeries}
                     onChange={(e) => setGuarantorPassportSeries(e.target.value)}
                     placeholder="96 11 445102"
-                    className="w-full bg-[#030e0a] border border-slate-700 px-3 py-1.5 rounded-lg text-xs text-white font-mono"
+                    className="w-full bg-[#030e0a] border border-slate-700 focus:border-[#d4af37] px-3 py-2 rounded-xl text-xs text-white font-mono focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] text-slate-300 mb-1">
+                  <label className="block text-[11px] text-slate-300 mb-1 font-semibold">
                     Кем выдан:
                   </label>
                   <input
@@ -559,25 +606,40 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
                     value={guarantorPassportIssuedBy}
                     onChange={(e) => setGuarantorPassportIssuedBy(e.target.value)}
                     placeholder="МВД по Чеченской Республике"
-                    className="w-full bg-[#030e0a] border border-slate-700 px-3 py-1.5 rounded-lg text-xs text-white"
+                    className="w-full bg-[#030e0a] border border-slate-700 focus:border-[#d4af37] px-3 py-2 rounded-xl text-xs text-white focus:outline-none"
                   />
                 </div>
 
-                {/* Upload Dropzone Preview */}
+                {/* Upload Zone */}
                 <div>
-                  <label className="block text-[11px] text-slate-300 mb-1">
-                    Скан главной страницы:
+                  <label className="block text-[11px] text-slate-300 mb-1 font-semibold">
+                    Фото / скан паспорта:
                   </label>
-                  <div className="relative rounded-lg border border-dashed border-[#d4af37]/40 bg-[#020b08] p-2 flex items-center gap-2.5">
+                  <input
+                    type="file"
+                    ref={guarantorFileInputRef}
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleFileUpload(e, setGuarantorPassportPhoto)}
+                  />
+                  <div 
+                    onClick={() => guarantorFileInputRef.current?.click()}
+                    className="group relative rounded-xl border border-dashed border-[#d4af37]/50 bg-[#020b08] p-2.5 flex items-center gap-3 cursor-pointer hover:border-[#d4af37] transition-all"
+                  >
                     <img
                       src={guarantorPassportPhoto}
                       alt="Guarantor Passport"
                       referrerPolicy="no-referrer"
-                      className="w-12 h-12 object-cover rounded border border-slate-700 shrink-0"
+                      className="w-12 h-12 object-cover rounded-lg border border-slate-700 shrink-0 group-hover:scale-105 transition-transform"
                     />
-                    <div className="text-[10px] text-slate-400 leading-tight">
-                      <strong className="text-emerald-400 block font-semibold">passport_guarantor.jpg</strong>
-                      <span>Загружено • Проверено</span>
+                    <div className="min-w-0 flex-1">
+                      <strong className="text-xs text-emerald-400 block font-semibold truncate">
+                        passport_guarantor.jpg
+                      </strong>
+                      <span className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                        <Upload className="w-3 h-3 text-[#d4af37]" />
+                        <span>Нажмите для смены файла</span>
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -585,11 +647,11 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
 
             </div>
 
-            <div className="pt-2 flex items-center justify-between gap-3">
+            <div className="pt-3 flex items-center justify-between gap-3 border-t border-slate-800/80">
               <button
                 type="button"
-                onClick={() => setCurrentStep('guarantor')}
-                className="px-4 py-2 rounded-xl border border-slate-700 text-xs font-semibold text-slate-300 hover:bg-slate-800"
+                onClick={() => { playButtonTap(); setCurrentStep('guarantor'); }}
+                className="px-4 py-2.5 rounded-xl border border-slate-700 text-xs font-semibold text-slate-300 hover:bg-slate-800"
               >
                 Назад
               </button>
@@ -597,60 +659,60 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
               <button
                 type="button"
                 onClick={() => { playButtonTap(); setCurrentStep('contract'); }}
-                className="py-2.5 px-5 rounded-xl bg-[#d4af37] text-black font-bold text-xs flex items-center gap-1.5 shadow-md hover:bg-[#f59e0b] transition-all"
+                className="py-2.5 px-6 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#f59e0b] hover:from-[#e5bd46] hover:to-[#d97706] text-black font-bold text-xs flex items-center gap-2 shadow-lg transition-all"
               >
-                <span>Далее: Договор Аманат</span>
+                <span>Далее: Шариатский договор</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
         )}
 
-        {/* STEP 3: CONTRACT & SIGNATURE */}
+        {/* STEP 3: CONTRACT & FINAL SUBMISSION */}
         {currentStep === 'contract' && (
           <div className="space-y-4">
-            <div className="bg-[#030e0a] border border-[#d4af37]/30 rounded-xl p-3.5 max-h-44 overflow-y-auto text-xs text-slate-300 space-y-2">
-              <div className="font-bold text-[#fef08a] border-b border-slate-800 pb-1 flex items-center justify-between">
+            <div className="bg-[#030e0a] border border-[#d4af37]/30 rounded-2xl p-4 max-h-48 overflow-y-auto text-xs text-slate-300 space-y-2.5">
+              <div className="font-bold text-[#fef08a] border-b border-slate-800 pb-1.5 flex items-center justify-between">
                 <span>ДОГОВОР ПОРУЧИТЕЛЬСТВА (КАФАЛЯ) И ШАРИАТСКОГО АМАНАТА</span>
-                <span className="text-[10px] text-emerald-400">0% РИБА</span>
+                <span className="text-[10px] text-emerald-400 font-bold px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/30">0% РИБА</span>
               </div>
               <p className="leading-relaxed text-[11px] text-slate-300">
-                1. Настоящим заявитель <strong>{user.fullName}</strong> и поручитель (Кафил) <strong>{guarantorName}</strong> ({guarantorRelation}) подтверждают добровольное участие в исламской кассе взаимопомощи «Вай Котел».
+                1. Настоящим заявитель <strong>{user?.fullName || 'Мансур Умаров'}</strong> и поручитель (Кафил) <strong>{guarantorName}</strong> ({guarantorRelation}) подтверждают добровольное участие в исламской кассе взаимопомощи «Вай Котел».
               </p>
               <p className="leading-relaxed text-[11px] text-slate-300">
                 2. Поручитель несет солидарную моральную и финансовую ответственность за соблюдение графика взносов до 15-го числа каждого месяца.
               </p>
               <p className="leading-relaxed text-[11px] text-slate-300">
-                3. Стороны подтверждают отсутствие процентных ставок (Риба), скрытых комиссий и штрафных пени. Все взносы являются беспроцентным целевым займом взаимопомощи (Кадр Хасан).
+                3. Стороны подтверждают отсутствие процентных ставок (Риба), скрытых комиссий и штрафных пени. Все взносы являются беспроцентным займом взаимопомощи (Кард аль-Хасан).
               </p>
             </div>
 
-            <div className="space-y-2">
-              <label className="flex items-start gap-2 text-xs text-slate-300 cursor-pointer">
+            <div className="space-y-2 bg-[#051711] p-3.5 rounded-2xl border border-slate-800">
+              <label className="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={agreeTerms}
                   onChange={(e) => setAgreeTerms(e.target.checked)}
-                  className="mt-0.5 rounded border-slate-700 text-[#d4af37] focus:ring-0"
+                  className="mt-0.5 rounded border-slate-700 text-[#d4af37] focus:ring-0 cursor-pointer"
                 />
-                <span>Я принимаю условия шариатского договора и подтверждаю достоверность документов.</span>
+                <span>Я принимаю условия шариатского договора и подтверждаю достоверность паспортов.</span>
               </label>
 
-              <label className="flex items-start gap-2 text-xs text-slate-300 cursor-pointer">
+              <label className="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={agreeKafilahResponsibility}
                   onChange={(e) => setAgreeKafilahResponsibility(e.target.checked)}
-                  className="mt-0.5 rounded border-slate-700 text-[#d4af37] focus:ring-0"
+                  className="mt-0.5 rounded border-slate-700 text-[#d4af37] focus:ring-0 cursor-pointer"
                 />
-                <span>Поручитель {guarantorName} уведомлен по SMS и дал согласие на поручительство.</span>
+                <span>Поручитель <strong>{guarantorName}</strong> уведомил о своем согласии по SMS.</span>
               </label>
             </div>
 
-            {/* Digital Signature Block */}
-            <div className="bg-[#051711] border border-slate-800 p-3 rounded-xl space-y-2">
-              <label className="block text-xs font-semibold text-slate-300">
-                Электронная цифровая подпись (ФИО):
+            {/* Digital Signature */}
+            <div className="bg-[#051711] border border-slate-800 p-3.5 rounded-2xl space-y-2">
+              <label className="block text-xs font-semibold text-slate-200">
+                Электронная цифровая подпись заявителя (ФИО):
               </label>
               <div className="flex gap-2">
                 <input
@@ -658,40 +720,42 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
                   value={signatureName}
                   onChange={(e) => setSignatureName(e.target.value)}
                   placeholder="Мансур Умаров"
-                  className="flex-1 bg-[#030e0a] border border-[#d4af37]/60 font-serif italic text-sm text-[#fef08a] px-3 py-1.5 rounded-lg focus:outline-none"
+                  className="flex-1 bg-[#030e0a] border border-[#d4af37]/60 font-serif italic text-sm text-[#fef08a] px-3.5 py-2 rounded-xl focus:outline-none"
                 />
-                <span className="px-2.5 py-1.5 bg-slate-900 border border-slate-700 text-[10px] font-mono text-emerald-400 rounded-lg flex items-center">
+                <span className="px-3 py-2 bg-slate-900 border border-slate-700 text-[10px] font-mono text-emerald-400 rounded-xl flex items-center">
                   SHA-256 ✓
                 </span>
               </div>
             </div>
 
-            <div className="pt-2 flex items-center justify-between gap-3 flex-wrap">
+            {/* Buttons */}
+            <div className="pt-3 flex items-center justify-between gap-2.5 flex-wrap border-t border-slate-800/80">
               <button
                 type="button"
-                onClick={() => setCurrentStep('passports')}
-                className="px-4 py-2 rounded-xl border border-slate-700 text-xs font-semibold text-slate-300 hover:bg-slate-800"
+                onClick={() => { playButtonTap(); setCurrentStep('passports'); }}
+                className="px-4 py-2.5 rounded-xl border border-slate-700 text-xs font-semibold text-slate-300 hover:bg-slate-800"
               >
                 Назад
               </button>
 
-              <div className="flex items-center gap-2">
-                {/* Fast Track Approve for testing/demo */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* 1-Click Demo Approval button */}
                 <button
                   type="button"
                   onClick={handleInstantDemoApprove}
-                  className="px-3 py-2 rounded-xl bg-emerald-950 border border-emerald-500/50 text-emerald-300 text-xs font-bold hover:bg-emerald-900 transition-all flex items-center gap-1"
-                  title="Мгновенное одобрение для демонстрации"
+                  className="px-3.5 py-2.5 rounded-xl bg-emerald-950 border border-emerald-500/50 text-emerald-300 text-xs font-bold hover:bg-emerald-900 transition-all flex items-center gap-1.5 shadow-md"
+                  title="Мгновенное одобрение для тестирования"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-[#d4af37]" />
-                  <span>Мгновенный тест (Уровень 2)</span>
+                  <span>⚡ Одобрить сразу (Демо)</span>
                 </button>
 
+                {/* Primary Submit Button */}
                 <button
                   type="button"
                   disabled={!agreeTerms || !agreeKafilahResponsibility}
                   onClick={handleSubmitToAdmin}
-                  className="py-2.5 px-5 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#f59e0b] text-black font-bold text-xs flex items-center gap-1.5 shadow-md hover:opacity-95 transition-all disabled:opacity-50"
+                  className="py-2.5 px-5 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#f59e0b] hover:from-[#e5bd46] hover:to-[#d97706] text-black font-bold text-xs flex items-center gap-2 shadow-lg transition-all disabled:opacity-50"
                 >
                   <FileText className="w-4 h-4" />
                   <span>Отправить на проверку</span>
@@ -701,53 +765,66 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
           </div>
         )}
 
-        {/* STEP 4: SUBMITTED / UNDER ADMIN REVIEW */}
+        {/* STEP 4: SUBMITTED VIEW (WHEN RE-OPENED IN PENDING STATUS) */}
         {currentStep === 'submitted' && (
-          <div className="py-6 text-center space-y-4">
-            <div className="w-14 h-14 rounded-2xl bg-amber-950/80 border border-amber-500/60 flex items-center justify-center text-amber-400 mx-auto shadow-lg">
+          <div className="py-5 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-amber-950/80 border border-amber-500/60 flex items-center justify-center text-amber-400 mx-auto shadow-lg shadow-amber-950/30">
               <Clock className="w-7 h-7 animate-pulse" />
             </div>
 
             <div>
-              <h3 className="text-lg font-bold text-white mb-1">
-                Заявка в ожидании проверки у Администратора
+              <h3 className="text-lg font-bold text-white mb-1 font-display">
+                Заявка находится на проверке у администратора ⏳
               </h3>
-              <p className="text-xs text-slate-300 max-w-md mx-auto">
-                Все данные, паспорта и SMS-подтверждение поручителя успешно переданы модераторам в Админ-панель. В вашем профиле статус изменен на «В ожидании».
+              <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
+                Данные поручителя и сканы паспортов отправлены. Ожидайте подтверждения (1–3 часа).
               </p>
             </div>
 
-            <div className="bg-[#051711] border border-slate-800 p-3 rounded-xl text-xs text-slate-300 max-w-md mx-auto space-y-1">
-              <div className="flex justify-between text-slate-400 text-[11px]">
-                <span>Заявитель:</span>
-                <strong className="text-white">{user.fullName}</strong>
-              </div>
-              <div className="flex justify-between text-slate-400 text-[11px]">
-                <span>Поручитель:</span>
+            <div className="bg-[#051711] border border-slate-800 p-4 rounded-2xl text-xs text-slate-300 max-w-md mx-auto space-y-2 text-left">
+              <div className="flex justify-between text-[11px] pb-1.5 border-b border-slate-800">
+                <span className="text-slate-400">Поручитель (Кафил):</span>
                 <strong className="text-white">{guarantorName} ({guarantorRelation})</strong>
               </div>
-              <div className="flex justify-between text-slate-400 text-[11px]">
-                <span>SMS поручителя:</span>
-                <span className="text-emerald-400 font-semibold">Подтверждено ✓</span>
+              <div className="flex justify-between text-[11px] pb-1.5 border-b border-slate-800">
+                <span className="text-slate-400">Телефон поручителя:</span>
+                <span className="text-slate-200 font-mono">{guarantorPhone}</span>
               </div>
-              <div className="flex justify-between text-slate-400 text-[11px]">
-                <span>Текущий статус:</span>
-                <span className="text-amber-400 font-bold">⏳ В ожидании одобрения</span>
+              <div className="flex justify-between text-[11px] pb-1.5 border-b border-slate-800">
+                <span className="text-slate-400">SMS-код:</span>
+                <span className="text-emerald-400 font-bold">Подтвержден ✓</span>
+              </div>
+              <div className="flex justify-between text-[11px]">
+                <span className="text-slate-400">Статус рассмотрения:</span>
+                <span className="text-amber-400 font-bold flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>В ожидании модерации</span>
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center justify-center gap-3 pt-2">
+            <div className="flex items-center justify-center gap-2.5 pt-2 flex-wrap">
               <button
                 type="button"
                 onClick={handleInstantDemoApprove}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#f59e0b] text-black text-xs font-bold shadow-md hover:opacity-90"
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#f59e0b] text-black text-xs font-bold shadow-md hover:opacity-90 transition-all flex items-center gap-1.5"
               >
-                Одобрить сейчас (Режим демонстрации)
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Одобрить сейчас (Демо)</span>
               </button>
+              
+              <button
+                type="button"
+                onClick={() => { playButtonTap(); setCurrentStep('guarantor'); }}
+                className="px-4 py-2.5 rounded-xl border border-slate-700 text-xs font-semibold text-slate-300 hover:bg-slate-800 transition-all"
+              >
+                Изменить данные
+              </button>
+
               <button
                 type="button"
                 onClick={() => { playButtonTap(); onClose(); }}
-                className="px-4 py-2 rounded-xl border border-slate-700 text-xs text-slate-300 hover:bg-slate-800"
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition-all"
               >
                 Закрыть
               </button>
@@ -765,13 +842,13 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
             <div>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#d4af37]/20 text-[#fef08a] border border-[#d4af37]/40 text-xs font-bold mb-2">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Уровень 2 • Подтвержден</span>
+                <span>Верифицирован 🛡️ (Уровень 2)</span>
               </div>
               <h3 className="text-xl font-bold text-white mb-1 font-display">
-                Доступ к пулам от 300 000 ₽ открыт!
+                Ограничение 300 000 ₽ успешно снято!
               </h3>
-              <p className="text-xs text-slate-300 max-w-md mx-auto">
-                Вам выдан Золотой щит верификации и начислено +20 баллов рейтинга Аманат за проверенного поручителя.
+              <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
+                Золотой щит верификации активен. Вам начислено +20 баллов рейтинга Аманат и открыт полный доступ к крупным автомобильным и бизнес-котлам.
               </p>
             </div>
 
@@ -779,7 +856,7 @@ export const Tier2VerificationModal: React.FC<Tier2VerificationModalProps> = ({
               <button
                 type="button"
                 onClick={() => { playSuccessChime(); onClose(); }}
-                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#f59e0b] text-black font-bold text-xs sm:text-sm shadow-lg hover:opacity-95"
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#f59e0b] text-black font-bold text-xs sm:text-sm shadow-lg hover:opacity-95 transition-all"
               >
                 Перейти к выбору и созданию котлов
               </button>

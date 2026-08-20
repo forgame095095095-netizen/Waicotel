@@ -4,6 +4,8 @@ import { DashboardTab } from './components/DashboardTab';
 import { BarabanWheel } from './components/BarabanWheel';
 import { ProfileAmanaTab } from './components/ProfileAmanaTab';
 import { AdminReviewPortal } from './components/AdminReviewPortal';
+import { AdminLoginModal } from './components/AdminLoginModal';
+import { PendingApprovalScreen } from './components/PendingApprovalScreen';
 import { Tier2VerificationModal } from './components/Tier2VerificationModal';
 import { SmsAuthModal } from './components/SmsAuthModal';
 import { KotelDetailModal } from './components/KotelDetailModal';
@@ -12,22 +14,51 @@ import { ShariaModal } from './components/ShariaModal';
 import { ReceiptUploadModal } from './components/ReceiptUploadModal';
 import { CreateKotelModal } from './components/CreateKotelModal';
 import { ShareKotelModal } from './components/ShareKotelModal';
-import { INITIAL_USER, INITIAL_KOTELS, INITIAL_AMANA_LOGS, INITIAL_VERIFICATION_REQUESTS } from './data/initialData';
-import { UserProfile, Kotel, KotelMember, PaymentStatus, AmanaScoreLog, VerificationRequest } from './types';
+import { 
+  INITIAL_USER, 
+  INITIAL_REGISTERED_USERS, 
+  INITIAL_KOTELS, 
+  INITIAL_AMANA_LOGS, 
+  INITIAL_VERIFICATION_REQUESTS 
+} from './data/initialData';
+import { 
+  UserProfile, 
+  Kotel, 
+  KotelMember, 
+  PaymentStatus, 
+  AmanaScoreLog, 
+  VerificationRequest 
+} from './types';
 import { playButtonTap, playSuccessChime } from './utils/audio';
-import { Scale, CheckCircle2, Shield, Heart, HelpCircle, Phone } from 'lucide-react';
+import { Scale, CheckCircle2, Shield, Heart, HelpCircle, Phone, Lock, Sparkles, KeyRound } from 'lucide-react';
 
 export default function App() {
-  // Local storage persisted state
-  const [user, setUser] = useState<UserProfile>(() => {
+  // 1. Users Database in localStorage
+  const [usersDb, setUsersDb] = useState<UserProfile[]>(() => {
     try {
-      const saved = localStorage.getItem('wai_kotel_user');
-      return saved ? JSON.parse(saved) : INITIAL_USER;
+      const saved = localStorage.getItem('wai_kotel_users_db');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return INITIAL_REGISTERED_USERS;
     } catch {
-      return INITIAL_USER;
+      return INITIAL_REGISTERED_USERS;
     }
   });
 
+  // 2. Currently Active User
+  const [user, setUser] = useState<UserProfile>(() => {
+    try {
+      const saved = localStorage.getItem('wai_kotel_user');
+      if (saved) return JSON.parse(saved);
+      return INITIAL_REGISTERED_USERS[0] || INITIAL_USER;
+    } catch {
+      return INITIAL_REGISTERED_USERS[0] || INITIAL_USER;
+    }
+  });
+
+  // 3. Kotels, Logs, Verification Requests in localStorage
   const [kotels, setKotels] = useState<Kotel[]>(() => {
     try {
       const saved = localStorage.getItem('wai_kotel_pools');
@@ -57,9 +88,12 @@ export default function App() {
 
   // Active Screen / Tab
   const [activeTab, setActiveTab] = useState<'dashboard' | 'baraban' | 'profile' | 'contract' | 'admin'>('dashboard');
-  const [selectedKotelForBarabanId, setSelectedKotelForBarabanId] = useState<string>('kotel_02'); // Default to ready for draw kotel
+  const [selectedKotelForBarabanId, setSelectedKotelForBarabanId] = useState<string>('kotel_02');
 
   // Modals
+  const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
+  const [isSmsAuthOpen, setIsSmsAuthOpen] = useState(false);
+  const [smsAuthMode, setSmsAuthMode] = useState<'login' | 'register'>('login');
   const [selectedKotelDetailId, setSelectedKotelDetailId] = useState<string | null>(null);
   const [receiptUploadData, setReceiptUploadData] = useState<{ kotelId: string; memberId: string } | null>(null);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
@@ -67,7 +101,6 @@ export default function App() {
   const [isCreateKotelOpen, setIsCreateKotelOpen] = useState(false);
   const [shareKotelTarget, setShareKotelTarget] = useState<Kotel | null>(null);
   const [isTier2VerificationOpen, setIsTier2VerificationOpen] = useState(false);
-  const [isSmsAuthOpen, setIsSmsAuthOpen] = useState(false);
   const [tier2TargetPool, setTier2TargetPool] = useState<{ title: string; amount: number } | null>(null);
 
   // Toast feedback
@@ -79,6 +112,12 @@ export default function App() {
   };
 
   // Sync to local storage
+  useEffect(() => {
+    try {
+      localStorage.setItem('wai_kotel_users_db', JSON.stringify(usersDb));
+    } catch {}
+  }, [usersDb]);
+
   useEffect(() => {
     try {
       localStorage.setItem('wai_kotel_user', JSON.stringify(user));
@@ -103,7 +142,7 @@ export default function App() {
     } catch {}
   }, [verificationRequests]);
 
-  // Handle URL deep-linking (?kotel=VK-7701 or kotel_01)
+  // Deep linking for kotel
   useEffect(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
@@ -123,7 +162,7 @@ export default function App() {
     } catch {}
   }, []);
 
-  // Handle Tier 2 modal trigger with target pool
+  // Open Tier 2 Modal
   const handleOpenTier2Modal = (poolTitle?: string, poolAmount?: number) => {
     if (poolTitle && poolAmount) {
       setTier2TargetPool({ title: poolTitle, amount: poolAmount });
@@ -164,7 +203,6 @@ export default function App() {
             if (preferredSlot && preferredSlot >= 1 && preferredSlot <= k.totalMembers && !occupiedSlots.has(preferredSlot)) {
               assignedSlotNumber = preferredSlot;
             } else {
-              // Find lowest free slot 1..totalMembers
               for (let i = 1; i <= k.totalMembers; i++) {
                 if (!occupiedSlots.has(i)) {
                   assignedSlotNumber = i;
@@ -226,6 +264,110 @@ export default function App() {
     }
   };
 
+  // Handler: Register New User -> saved to DB with status: 'pending'
+  const handleSuccessRegister = (newUser: UserProfile) => {
+    setUsersDb((prev) => [newUser, ...prev.filter((u) => u.id !== newUser.id)]);
+    setUser(newUser);
+    playSuccessChime();
+    showToast(`Заявка на регистрацию «${newUser.fullName}» принята! Ожидайте подтверждения.`);
+  };
+
+  // Handler: Login existing user
+  const handleSuccessLogin = (loggedInUser: UserProfile) => {
+    // Make sure we have latest status from usersDb
+    const fromDb = usersDb.find((u) => u.id === loggedInUser.id || u.phone === loggedInUser.phone) || loggedInUser;
+    setUser(fromDb);
+    playSuccessChime();
+    if (fromDb.registrationStatus === 'pending') {
+      showToast(`Вход выполнен. Ваша заявка находится на рассмотрении у администратора.`);
+    } else {
+      showToast(`С возвращением, ${fromDb.fullName}!`);
+    }
+  };
+
+  // Handler: Admin Approves User Registration
+  const handleApproveUserRegistration = (userId: string) => {
+    const nowStr = new Date().toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    let targetUserName = '';
+
+    setUsersDb((prev) =>
+      prev.map((u) => {
+        if (u.id === userId) {
+          targetUserName = u.fullName;
+          return {
+            ...u,
+            registrationStatus: 'approved',
+            registrationApprovedAt: `Сегодня, ${nowStr.split(',')[1]?.trim() || '14:30'}`,
+            isGuarantorVerified: true,
+          };
+        }
+        return u;
+      })
+    );
+
+    if (user.id === userId) {
+      setUser((prev) => ({
+        ...prev,
+        registrationStatus: 'approved',
+        registrationApprovedAt: `Сегодня, ${nowStr.split(',')[1]?.trim() || '14:30'}`,
+        isGuarantorVerified: true,
+      }));
+    }
+
+    playSuccessChime();
+    showToast(`Заявка пользователя «${targetUserName || userId}» одобрена! Доступ открыт.`);
+  };
+
+  // Handler: Admin Rejects User Registration
+  const handleRejectUserRegistration = (userId: string, reason: string) => {
+    setUsersDb((prev) =>
+      prev.map((u) =>
+        u.id === userId
+          ? {
+              ...u,
+              registrationStatus: 'rejected',
+              registrationRejectionReason: reason,
+            }
+          : u
+      )
+    );
+
+    if (user.id === userId) {
+      setUser((prev) => ({
+        ...prev,
+        registrationStatus: 'rejected',
+        registrationRejectionReason: reason,
+      }));
+    }
+
+    playButtonTap();
+    showToast('Заявка на регистрацию отклонена. Причина сохранена.');
+  };
+
+  // Handler: Switch active user directly (for rapid admin testing)
+  const handleSwitchToUser = (targetUser: UserProfile) => {
+    const latest = usersDb.find((u) => u.id === targetUser.id) || targetUser;
+    setUser(latest);
+    if (latest.registrationStatus === 'approved') {
+      setActiveTab('dashboard');
+    }
+    playSuccessChime();
+    showToast(`Переключен аккаунт: ${latest.fullName} (${latest.registrationStatus === 'approved' ? 'Одобрен' : 'В ожидании'})`);
+  };
+
+  // Handler: 1-Click Fast Approve current user
+  const handleFastApproveCurrent = () => {
+    handleApproveUserRegistration(user.id);
+    setActiveTab('dashboard');
+  };
+
   // Handler: Submit Verification Request from Tier2 Modal -> Admin Queue
   const handleSubmitVerificationRequest = (newRequest: VerificationRequest, updatedUser: UserProfile) => {
     setVerificationRequests((prev) => [
@@ -234,11 +376,11 @@ export default function App() {
     ]);
     setUser(updatedUser);
     playSuccessChime();
-    showToast('Заявка отправлена на проверку! Статус: «В ожидании». Вы можете перейти в Админ-панель для одобрения.');
+    showToast('Заявка отправлена на проверку! Статус: «В ожидании». Войдите как Администратор (admin/admin123) для одобрения.');
   };
 
-  // Handler: Admin approves request
-  const handleApproveRequest = (requestId: string) => {
+  // Handler: Admin approves Tier 2 request
+  const handleApproveTier2Request = (requestId: string) => {
     const nowStr = new Date().toLocaleDateString('ru-RU', {
       day: '2-digit',
       month: 'short',
@@ -271,8 +413,8 @@ export default function App() {
     }
   };
 
-  // Handler: Admin rejects request
-  const handleRejectRequest = (requestId: string, reason: string) => {
+  // Handler: Admin rejects Tier 2 request
+  const handleRejectTier2Request = (requestId: string, reason: string) => {
     const nowStr = new Date().toLocaleDateString('ru-RU', {
       day: '2-digit',
       month: 'short',
@@ -301,27 +443,30 @@ export default function App() {
     if (mode === 'tier1') {
       setUser((prev) => ({
         ...prev,
+        registrationStatus: 'approved',
         verificationTier: 1,
         verificationStatus: 'unverified',
         isGuarantorVerified: false,
         isPassportVerified: false,
         amanaScore: 75,
       }));
-      showToast('Режим переключен: Базовый участник (Уровень 1)');
+      setActiveTab('dashboard');
+      showToast('Режим переключен: Базовый участник (Одобрен, Уровень 1)');
     } else if (mode === 'pending') {
       setUser((prev) => ({
         ...prev,
+        registrationStatus: 'pending',
+        registeredAt: 'Сегодня, 14:00',
         verificationTier: 1,
         verificationStatus: 'pending',
-        isGuarantorVerified: false,
-        isPassportVerified: true,
-        verificationSubmittedAt: 'Сегодня, 14:00',
-        amanaScore: 85,
+        amanaScore: 75,
       }));
-      showToast('Режим переключен: Заявка подана (В ожидании одобрения)');
+      setActiveTab('dashboard');
+      showToast('Режим переключен: Заявка на регистрации (В ожидании ⏳)');
     } else if (mode === 'tier2') {
       setUser((prev) => ({
         ...prev,
+        registrationStatus: 'approved',
         verificationTier: 2,
         verificationStatus: 'verified',
         isGuarantorVerified: true,
@@ -330,10 +475,11 @@ export default function App() {
         verificationApprovedAt: 'Сегодня, 14:15',
         amanaScore: 125,
       }));
+      setActiveTab('dashboard');
       showToast('Режим переключен: Полная верификация (Уровень 2 ★)');
     } else if (mode === 'admin') {
       setActiveTab('admin');
-      showToast('Открыт Админ-портал проверки заявок');
+      showToast('Открыта Панель Администратора (admin / admin123)');
     }
   };
 
@@ -386,14 +532,12 @@ export default function App() {
       })
     );
 
-    // Give bonus Amana points
     setUser((prev) => ({
       ...prev,
       amanaScore: Math.min(150, prev.amanaScore + 15),
       totalSaved: prev.totalSaved + (kotels.find((k) => k.id === kotelId)?.monthlyContribution || 30000),
     }));
 
-    // Add log
     const newLog: AmanaScoreLog = {
       id: `log_${Date.now()}`,
       date: 'Сегодня',
@@ -429,20 +573,26 @@ export default function App() {
 
   // Reset demo data
   const handleResetDemoData = () => {
+    localStorage.removeItem('wai_kotel_users_db');
     localStorage.removeItem('wai_kotel_user');
     localStorage.removeItem('wai_kotel_pools');
     localStorage.removeItem('wai_kotel_logs');
     localStorage.removeItem('wai_kotel_requests');
-    setUser(INITIAL_USER);
+    setUsersDb(INITIAL_REGISTERED_USERS);
+    setUser(INITIAL_REGISTERED_USERS[0]);
     setKotels(INITIAL_KOTELS);
     setAmanaLogs(INITIAL_AMANA_LOGS);
     setVerificationRequests(INITIAL_VERIFICATION_REQUESTS);
     playSuccessChime();
-    showToast('Тестовые данные сброшены к начальным значениям');
+    showToast('База данных и локальные данные сброшены к начальным');
   };
 
   const pendingRequestsCount = verificationRequests.filter((r) => r.status === 'pending').length;
+  const pendingRegistrationsCount = usersDb.filter((u) => u.registrationStatus === 'pending').length;
   const selectedKotelForDetail = kotels.find((k) => k.id === selectedKotelDetailId);
+
+  // Check if current user is blocked by Pending status
+  const isUserPending = user.registrationStatus === 'pending' && activeTab !== 'admin';
 
   return (
     <div className="min-h-screen bg-[#070d0b] text-slate-100 flex flex-col justify-between selection:bg-[#d4af37]/30 selection:text-[#fef08a]">
@@ -456,10 +606,15 @@ export default function App() {
         onOpenSharia={() => setIsShariaOpen(true)}
         onOpenOnboarding={() => setIsOnboardingOpen(true)}
         onOpenTier2Verification={() => handleOpenTier2Modal()}
-        onOpenSmsAuth={() => setIsSmsAuthOpen(true)}
+        onOpenSmsAuth={(mode = 'login') => {
+          setSmsAuthMode(mode);
+          setIsSmsAuthOpen(true);
+        }}
+        onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
         onSwitchUserMode={handleSwitchUserMode}
         onResetDemoData={handleResetDemoData}
         pendingRequestsCount={pendingRequestsCount}
+        pendingRegistrationsCount={pendingRegistrationsCount}
       />
 
       {/* Main Container */}
@@ -473,114 +628,145 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 1: Dashboard & Available Pools */}
-        {activeTab === 'dashboard' && (
-          <DashboardTab
+        {/* 🛑 BLOCKING SCREEN: If current user is in 'pending' registration status (except when admin tab is opened) */}
+        {isUserPending ? (
+          <PendingApprovalScreen
             user={user}
-            kotels={kotels}
-            onOpenKotelDetail={(id) => setSelectedKotelDetailId(id)}
-            onOpenBaraban={(id) => {
-              setSelectedKotelForBarabanId(id);
-              setActiveTab('baraban');
+            onRefreshStatus={() => {
+              // Refresh user data from usersDb
+              const latest = usersDb.find((u) => u.id === user.id) || user;
+              setUser(latest);
+              if (latest.registrationStatus === 'approved') {
+                playSuccessChime();
+                showToast('Поздравляем! Ваша заявка одобрена администратором!');
+              } else {
+                showToast('Статус заявки: По-прежнему «На рассмотрении». Администратор проверяет данные.');
+              }
             }}
-            onOpenCreateKotel={() => setIsCreateKotelOpen(true)}
-            onOpenOnboarding={() => setIsOnboardingOpen(true)}
-            onOpenTier2Verification={() => handleOpenTier2Modal()}
-            onOpenSharia={() => setIsShariaOpen(true)}
-            onJoinKotel={handleJoinKotel}
-            onOpenReceiptUpload={(kotelId, memberId) => setReceiptUploadData({ kotelId, memberId })}
-            onOpenShareKotel={(kotel) => setShareKotelTarget(kotel)}
-          />
-        )}
-
-        {/* Tab 2: Interactive Baraban Wheel */}
-        {activeTab === 'baraban' && (
-          <BarabanWheel
-            kotels={kotels}
-            selectedKotelId={selectedKotelForBarabanId}
-            onSelectKotel={(id) => setSelectedKotelForBarabanId(id)}
-            onApplyDrawResults={handleApplyDrawResults}
-            onOpenKotelDetail={(id) => setSelectedKotelDetailId(id)}
-          />
-        )}
-
-        {/* Tab 3: User Profile & Amana Rating History */}
-        {activeTab === 'profile' && (
-          <ProfileAmanaTab
-            user={user}
-            amanaLogs={amanaLogs}
-            onOpenSharia={() => setIsShariaOpen(true)}
-            onOpenOnboarding={() => setIsOnboardingOpen(true)}
-            onUpdateUser={(updated) => {
-              setUser(updated);
-              showToast('Профиль и данные верификации успешно обновлены!');
+            onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
+            onOpenRegisterOrLogin={() => {
+              setSmsAuthMode('login');
+              setIsSmsAuthOpen(true);
             }}
+            onFastApproveCurrent={handleFastApproveCurrent}
           />
-        )}
+        ) : (
+          <>
+            {/* Tab 1: Dashboard & Available Pools */}
+            {activeTab === 'dashboard' && (
+              <DashboardTab
+                user={user}
+                kotels={kotels}
+                onOpenKotelDetail={(id) => setSelectedKotelDetailId(id)}
+                onOpenBaraban={(id) => {
+                  setSelectedKotelForBarabanId(id);
+                  setActiveTab('baraban');
+                }}
+                onOpenCreateKotel={() => setIsCreateKotelOpen(true)}
+                onOpenOnboarding={() => setIsOnboardingOpen(true)}
+                onOpenTier2Verification={() => handleOpenTier2Modal()}
+                onOpenSharia={() => setIsShariaOpen(true)}
+                onJoinKotel={handleJoinKotel}
+                onOpenReceiptUpload={(kotelId, memberId) => setReceiptUploadData({ kotelId, memberId })}
+                onOpenShareKotel={(kotel) => setShareKotelTarget(kotel)}
+              />
+            )}
 
-        {/* Tab 4: Direct Contract View */}
-        {activeTab === 'contract' && (
-          <div className="space-y-6 max-w-4xl mx-auto">
-            <div className="bg-[#091712] border border-[#d4af37]/35 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-[#d4af37]/40 flex items-center justify-center text-[#d4af37]">
-                    <Scale className="w-5 h-5" />
+            {/* Tab 2: Interactive Baraban Wheel */}
+            {activeTab === 'baraban' && (
+              <BarabanWheel
+                kotels={kotels}
+                selectedKotelId={selectedKotelForBarabanId}
+                onSelectKotel={(id) => setSelectedKotelForBarabanId(id)}
+                onApplyDrawResults={handleApplyDrawResults}
+                onOpenKotelDetail={(id) => setSelectedKotelDetailId(id)}
+              />
+            )}
+
+            {/* Tab 3: User Profile & Amana Rating History */}
+            {activeTab === 'profile' && (
+              <ProfileAmanaTab
+                user={user}
+                amanaLogs={amanaLogs}
+                onOpenSharia={() => setIsShariaOpen(true)}
+                onOpenOnboarding={() => setIsOnboardingOpen(true)}
+                onUpdateUser={(updated) => {
+                  setUser(updated);
+                  setUsersDb((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+                  showToast('Профиль и данные верификации успешно обновлены!');
+                }}
+              />
+            )}
+
+            {/* Tab 4: Direct Contract View */}
+            {activeTab === 'contract' && (
+              <div className="space-y-6 max-w-4xl mx-auto">
+                <div className="bg-[#091712] border border-[#d4af37]/35 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-[#d4af37]/40 flex items-center justify-center text-[#d4af37]">
+                        <Scale className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold text-white font-display">
+                          Договор Вай Котел (ВК)
+                        </h2>
+                        <p className="text-xs text-emerald-400">
+                          Исламская система взаимных беспроцентных ссуд и накоплений
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30 text-xs font-bold">
+                      ✓ Действующий
+                    </span>
                   </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-white font-display">
-                      Договор Вай Котел (ВК)
-                    </h2>
-                    <p className="text-xs text-emerald-400">
-                      Исламская система взаимных беспроцентных ссуд и накоплений
+
+                  <div className="bg-[#06120e] p-5 rounded-2xl border border-slate-800 text-xs text-slate-300 space-y-3.5 leading-relaxed">
+                    <p>
+                      <strong>1. Суть Вай Котел:</strong> Участники Вай Котла формируют неделимый беспроцентный целевой фонд. Каждый участник поочередно получает всю собранную сумму пула без комиссий и надбавок.
+                    </p>
+                    <p>
+                      <strong>2. Обязательство по срокам:</strong> Каждый участник обязуется своевременно вносить взнос до 15-го числа каждого месяца. Допускается льготный период до 19-го числа без денежных штрафов.
+                    </p>
+                    <p>
+                      <strong>3. Социальная гарантия Кафаля:</strong> В случае неплатежеспособности участника его поручитель (Кафил) обязуется исполнить обязательство в полном объеме.
+                    </p>
+                    <p>
+                      <strong>4. Электронная подпись:</strong> Договор закреплен двухфакторным SMS-подтверждением участника {user.fullName} ({user.phone}) и поручителя {user.guarantorName} ({user.guarantorPhone}).
                     </p>
                   </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <button
+                      onClick={() => setIsShariaOpen(true)}
+                      className="text-xs text-[#d4af37] hover:underline font-semibold"
+                    >
+                      Читать подробное богословское заключение (Фетву) →
+                    </button>
+
+                    <button
+                      onClick={() => { playButtonTap(); showToast('Договор экспортирован в PDF'); }}
+                      className="px-4 py-2 rounded-xl bg-[#d4af37] text-black font-bold text-xs hover:bg-[#f59e0b] transition-all cursor-pointer"
+                    >
+                      Скачать копию договора
+                    </button>
+                  </div>
                 </div>
-                <span className="px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30 text-xs font-bold">
-                  ✓ Действующий
-                </span>
               </div>
-
-              <div className="bg-[#06120e] p-5 rounded-2xl border border-slate-800 text-xs text-slate-300 space-y-3.5 leading-relaxed">
-                <p>
-                  <strong>1. Суть Вай Котел:</strong> Участники Вай Котла формируют неделимый беспроцентный целевой фонд. Каждый участник поочередно получает всю собранную сумму пула без комиссий и надбавок.
-                </p>
-                <p>
-                  <strong>2. Обязательство по срокам:</strong> Каждый участник обязуется своевременно вносить взнос до 15-го числа каждого месяца. Допускается льготный период до 19-го числа без денежных штрафов.
-                </p>
-                <p>
-                  <strong>3. Социальная гарантия Кафаля:</strong> В случае неплатежеспособности участника его поручитель (Кафил) обязуется исполнить обязательство в полном объеме.
-                </p>
-                <p>
-                  <strong>4. Электронная подпись:</strong> Договор закреплен двухфакторным SMS-подтверждением участника {user.fullName} ({user.phone}) и поручителя {user.guarantorName} ({user.guarantorPhone}).
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between pt-2">
-                <button
-                  onClick={() => setIsShariaOpen(true)}
-                  className="text-xs text-[#d4af37] hover:underline font-semibold"
-                >
-                  Читать подробное богословское заключение (Фетву) →
-                </button>
-
-                <button
-                  onClick={() => { playButtonTap(); showToast('Договор экспортирован в PDF'); }}
-                  className="px-4 py-2 rounded-xl bg-[#d4af37] text-black font-bold text-xs hover:bg-[#f59e0b] transition-all"
-                >
-                  Скачать копию договора
-                </button>
-              </div>
-            </div>
-          </div>
+            )}
+          </>
         )}
 
-        {/* Tab 5: Admin Review Portal */}
+        {/* Tab 5: Admin Review Portal (Always accessible for review/approvals) */}
         {activeTab === 'admin' && (
           <AdminReviewPortal
+            usersDb={usersDb}
+            onApproveUserRegistration={handleApproveUserRegistration}
+            onRejectUserRegistration={handleRejectUserRegistration}
+            onSwitchToUser={handleSwitchToUser}
             requests={verificationRequests}
-            onApproveRequest={handleApproveRequest}
-            onRejectRequest={handleRejectRequest}
+            onApproveRequest={handleApproveTier2Request}
+            onRejectRequest={handleRejectTier2Request}
             onSelectKotel={(title) => {
               const found = kotels.find((k) => k.title.toLowerCase().includes(title.toLowerCase()));
               if (found) {
@@ -590,15 +776,37 @@ export default function App() {
               }
             }}
             currentUser={user}
+            onExitAdmin={() => setActiveTab('dashboard')}
           />
         )}
 
       </main>
 
-      {/* Modals Container */}
+      {/* Admin Login Modal (admin / admin123) */}
+      <AdminLoginModal
+        isOpen={isAdminLoginOpen}
+        onClose={() => setIsAdminLoginOpen(false)}
+        onSuccessLogin={() => {
+          setActiveTab('admin');
+          showToast('Вы успешно вошли в Панель Администратора!');
+        }}
+      />
+
+      {/* SMS Auth & Registration Modal */}
+      <SmsAuthModal
+        isOpen={isSmsAuthOpen}
+        onClose={() => setIsSmsAuthOpen(false)}
+        usersDb={usersDb}
+        initialMode={smsAuthMode}
+        onSuccessRegister={handleSuccessRegister}
+        onSuccessLogin={handleSuccessLogin}
+        onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
+      />
+
+      {/* Kotel Detail Modal */}
       {selectedKotelForDetail && (
         <KotelDetailModal
-          isOpen={!!selectedKotelDetailId}
+          isOpen={!!selectedKotelForDetail}
           onClose={() => setSelectedKotelDetailId(null)}
           kotel={selectedKotelForDetail}
           onJoinKotel={handleJoinKotel}
@@ -613,6 +821,7 @@ export default function App() {
         />
       )}
 
+      {/* Share Kotel Modal */}
       {shareKotelTarget && (
         <ShareKotelModal
           isOpen={!!shareKotelTarget}
@@ -621,6 +830,7 @@ export default function App() {
         />
       )}
 
+      {/* Receipt Upload Modal */}
       {receiptUploadData && (
         <ReceiptUploadModal
           isOpen={!!receiptUploadData}
@@ -631,22 +841,26 @@ export default function App() {
         />
       )}
 
+      {/* Onboarding Modal */}
       <OnboardingModal
         isOpen={isOnboardingOpen}
         onClose={() => setIsOnboardingOpen(false)}
         user={user}
         onUpdateUser={(updated) => {
           setUser(updated);
+          setUsersDb((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
           showToast('Анкета обновлена!');
         }}
       />
 
+      {/* Sharia Modal */}
       <ShariaModal
         isOpen={isShariaOpen}
         onClose={() => setIsShariaOpen(false)}
         userName={user.fullName}
       />
 
+      {/* Create Kotel Modal */}
       <CreateKotelModal
         isOpen={isCreateKotelOpen}
         onClose={() => setIsCreateKotelOpen(false)}
@@ -668,10 +882,9 @@ export default function App() {
         onSubmitVerification={handleSubmitVerificationRequest}
         onFastApprove={() => {
           setIsTier2VerificationOpen(false);
-          // Find or create request then approve
           const existingReq = verificationRequests.find((r) => r.userId === user.id);
           if (existingReq) {
-            handleApproveRequest(existingReq.id);
+            handleApproveTier2Request(existingReq.id);
           } else {
             setUser((prev) => ({
               ...prev,
@@ -684,25 +897,6 @@ export default function App() {
             }));
             showToast('Уровень 2 успешно подтвержден!');
           }
-        }}
-      />
-
-      {/* SMS Auth Modal */}
-      <SmsAuthModal
-        isOpen={isSmsAuthOpen}
-        onClose={() => setIsSmsAuthOpen(false)}
-        currentUser={user}
-        phone={user.phone}
-        onSuccessLogin={(updated) => {
-          setUser(updated);
-          showToast('Вы успешно вошли и подтвердили номер телефона!');
-        }}
-        onSuccess={() => {
-          setUser((prev) => ({
-            ...prev,
-            isPhoneVerified: true,
-          }));
-          showToast('Номер телефона успешно подтвержден по SMS!');
         }}
       />
 

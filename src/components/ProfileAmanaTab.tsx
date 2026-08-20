@@ -19,7 +19,10 @@ import {
   Briefcase,
   FileCheck2,
   Camera,
-  Check
+  Check,
+  UserPlus,
+  ChevronRight,
+  ExternalLink
 } from 'lucide-react';
 import { UserProfile, AmanaScoreLog } from '../types';
 import { playButtonTap, playSuccessChime } from '../utils/audio';
@@ -32,6 +35,8 @@ interface ProfileAmanaTabProps {
   onOpenSharia: () => void;
   onOpenOnboarding: () => void;
   onUpdateUser: (updated: UserProfile) => void;
+  onOpenTier2Verification?: () => void;
+  onSwitchToAdmin?: () => void;
 }
 
 export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
@@ -40,9 +45,14 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
   onOpenSharia,
   onOpenOnboarding,
   onUpdateUser,
+  onOpenTier2Verification,
+  onSwitchToAdmin,
 }) => {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [copiedContract, setCopiedContract] = useState(false);
+
+  const isVerified = user.verificationStatus === 'verified' || user.verificationTier === 2;
+  const isPending = user.verificationStatus === 'pending';
 
   const getTierInfo = (score: number) => {
     if (score >= 120) {
@@ -64,8 +74,8 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
     return {
       name: 'Базовый ВК',
       badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-      maxLimit: 'До 150 000 ₽',
-      privileges: 'Доступ к стартовым и студенческим пулам',
+      maxLimit: 'До 300 000 ₽ (без поручителя)',
+      privileges: 'Доступ к стандартным пулам до 300 000 ₽',
     };
   };
 
@@ -76,6 +86,13 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
     playSuccessChime();
     setCopiedContract(true);
     setTimeout(() => setCopiedContract(false), 3000);
+  };
+
+  const handleOpenVerification = () => {
+    playButtonTap();
+    if (onOpenTier2Verification) {
+      onOpenTier2Verification();
+    }
   };
 
   return (
@@ -118,10 +135,25 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
                   {tier.name}
                 </span>
                 
-                {user.verificationStatus === 'verified' && (
-                  <span className="text-xs text-emerald-400 font-medium flex items-center gap-1 bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    Верифицирован
+                {isVerified ? (
+                  <span className="text-xs text-emerald-400 font-bold flex items-center gap-1 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-500/40">
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#d4af37]" />
+                    Верифицирован 🛡️ (Ур. 2)
+                  </span>
+                ) : isPending ? (
+                  <span 
+                    onClick={handleOpenVerification}
+                    className="text-xs text-amber-300 font-semibold flex items-center gap-1 bg-amber-950/80 px-2.5 py-0.5 rounded-full border border-amber-500/40 cursor-pointer hover:bg-amber-900 transition-colors"
+                  >
+                    <Clock className="w-3.5 h-3.5 animate-pulse" />
+                    На проверке ⏳
+                  </span>
+                ) : (
+                  <span 
+                    onClick={handleOpenVerification}
+                    className="text-xs text-slate-300 font-medium flex items-center gap-1 bg-slate-800/80 px-2.5 py-0.5 rounded-full border border-slate-700 cursor-pointer hover:border-[#d4af37] hover:text-[#fef08a] transition-colors"
+                  >
+                    <span>Базовый (Лимит 300k)</span>
                   </span>
                 )}
               </div>
@@ -136,7 +168,7 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
                   occupation={user.occupation}
                   isOccupationVerified={user.isOccupationVerified}
                   isPassportVerified={user.isPassportVerified}
-                  isGuarantorVerified={user.isGuarantorVerified}
+                  isGuarantorVerified={user.isGuarantorVerified || isVerified}
                   amanaScore={user.amanaScore}
                 />
               </div>
@@ -152,51 +184,192 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
                 <span>•</span>
                 <span>{user.phone}</span>
                 <span>•</span>
-                <span className="text-slate-300">ID: VK-095-2026</span>
+                <span className="text-slate-300 font-mono">ID: VK-095-2026</span>
               </div>
             </div>
           </div>
 
-          {/* Right Side: Actions and Guarantor */}
-          <div className="flex flex-col sm:flex-row lg:flex-col gap-3 shrink-0">
-            {/* Guarantor Card */}
-            <div className="bg-[#061410] border border-emerald-500/30 p-4 rounded-2xl min-w-[260px]">
-              <div className="flex items-center justify-between text-xs text-emerald-400 mb-1.5 font-medium">
-                <span className="flex items-center gap-1.5">
-                  <UserCheck className="w-4 h-4" />
-                  Гарант-Поручитель (Кафил)
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30">
-                  Подтвержден
-                </span>
-              </div>
-
-              <div className="text-sm font-bold text-white">
-                {user.guarantorName}
-              </div>
-              <div className="text-xs text-slate-400 mt-0.5">
-                Степень родства: <strong className="text-slate-200">{user.guarantorRelation}</strong>
-              </div>
-              <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
-                <PhoneCall className="w-3 h-3 text-[#d4af37]" />
-                <span>{user.guarantorPhone}</span>
-              </div>
-            </div>
-
-            {/* Quick Edit Profile Button */}
+          {/* Right Side: Quick Action Button */}
+          <div className="flex flex-col sm:flex-row lg:flex-col gap-2.5 shrink-0">
             <button
               onClick={() => { playButtonTap(); setIsSettingsModalOpen(true); }}
-              className="w-full px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-950 to-[#0d2a20] border border-[#d4af37]/40 text-[#fef08a] hover:bg-emerald-900 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg"
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-950 to-[#0d2a20] border border-[#d4af37]/40 text-[#fef08a] hover:bg-emerald-900 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg"
             >
               <Settings className="w-4 h-4 text-[#d4af37]" />
-              Редактировать фото и деятельность
+              Редактировать анкету
             </button>
           </div>
 
         </div>
       </div>
 
-      {/* 2. Trust Badges & Verification Methods (Способы подтверждения доверия) */}
+      {/* ========================================================================= */}
+      {/* 2. DEDICATED SECTION: «Поручитель и Верификация» (Guarantor & Tier 2 Status) */}
+      {/* ========================================================================= */}
+      <div className="bg-[#091712] border border-[#d4af37]/35 rounded-3xl p-6 sm:p-7 shadow-2xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#103b2e] to-[#071511] border border-[#d4af37]/50 flex items-center justify-center text-[#d4af37]">
+              <ShieldCheck className="w-5 h-5 text-[#fef08a]" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-white font-display">
+                Поручитель и Верификация (Уровень 2)
+              </h2>
+              <p className="text-xs text-slate-400">
+                Шариатский институт Кафаля (поручительства) для доступа к пулам свыше 300 000 ₽
+              </p>
+            </div>
+          </div>
+
+          {/* Badge indicator */}
+          <div>
+            {isVerified ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 text-xs font-bold shadow-sm">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Верифицирован 🛡️ (Лимит снят)</span>
+              </span>
+            ) : isPending ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-950/80 border border-amber-500/50 text-amber-300 text-xs font-bold shadow-sm animate-pulse">
+                <Clock className="w-3.5 h-3.5 text-amber-400" />
+                <span>На проверке у администратора ⏳</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-amber-500/40 text-[#fef08a] text-xs font-bold shadow-sm">
+                <AlertTriangle className="w-3.5 h-3.5 text-[#d4af37]" />
+                <span>Требуется для сумм 300k+</span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Dynamic Card Content depending on status */}
+        {isVerified ? (
+          /* STATE A: VERIFIED (TIER 2) */
+          <div className="bg-gradient-to-br from-[#051a13] to-[#092b1e] border border-emerald-500/40 p-5 rounded-2xl space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-white flex items-center gap-1.5">
+                    <UserCheck className="w-4 h-4 text-emerald-400" />
+                    Поручитель (Кафил): {user.guarantorName || 'Даудов Ибрагим Ахмедович'}
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-bold">
+                    SMS Подтверждено ✓
+                  </span>
+                </div>
+                <div className="text-xs text-slate-300 flex flex-wrap gap-4 pt-1">
+                  <span>Степень родства: <strong className="text-white">{user.guarantorRelation || 'Брат'}</strong></span>
+                  <span>Телефон: <strong className="text-emerald-300 font-mono">{user.guarantorPhone || '+7 (928) 714-33-22'}</strong></span>
+                  <span>Паспорт поручителя: <strong className="text-slate-200 font-mono">Проверен ✓</strong></span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleOpenVerification}
+                  className="px-4 py-2 rounded-xl bg-[#091f17] border border-[#d4af37]/40 hover:border-[#d4af37] text-xs font-bold text-[#fef08a] transition-all flex items-center gap-1.5 hover:bg-[#0e2c21]"
+                >
+                  <span>Изменить данные поручителя</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between text-xs text-emerald-300/90 flex-wrap gap-2">
+              <span className="flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-[#d4af37]" />
+                Золотой щит активен • Вам доступно создание и вступление в любые авто- и бизнес-котлы (до 1 500 000 ₽)
+              </span>
+              <span className="text-slate-400 text-[11px]">
+                Одобрено: {user.verificationApprovedAt || '2026 г.'}
+              </span>
+            </div>
+          </div>
+        ) : isPending ? (
+          /* STATE B: PENDING MODERATION */
+          <div className="bg-gradient-to-br from-[#1c1404] to-[#120e03] border border-amber-500/45 p-5 rounded-2xl space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-400 animate-spin" />
+                  <span className="text-sm font-bold text-amber-200">
+                    Заявка на верификацию находится на рассмотрении
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Данные поручителя и сканы паспортов отправлены. Ожидайте подтверждения (1–3 часа).
+                </p>
+                <div className="text-xs text-slate-300 flex flex-wrap gap-4 pt-1 font-mono">
+                  <span>Поручитель: <strong className="text-white">{user.guarantorName || 'Даудов Ибрагим Ахмедович'}</strong></span>
+                  <span>Телефон: <strong className="text-amber-300">{user.guarantorPhone || '+7 (928) 714-33-22'}</strong></span>
+                  <span>Статус: <strong className="text-amber-400">⏳ Ожидает модерации</strong></span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleOpenVerification}
+                  className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
+                >
+                  <span>Проверить заявку</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+
+                {onSwitchToAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => { playButtonTap(); onSwitchToAdmin(); }}
+                    className="px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-amber-500/50 text-xs font-semibold text-slate-200 hover:text-white transition-all flex items-center gap-1.5"
+                  >
+                    <span>Перейти в Админ-панель</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-[#d4af37]" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* STATE C: UNVERIFIED (TIER 1) */
+          <div className="bg-gradient-to-br from-[#0c1e17] via-[#081711] to-[#141d08] border border-[#d4af37]/40 p-5 rounded-2xl space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-[#d4af37]" />
+                  <span className="text-sm font-bold text-[#fef08a]">
+                    Лимит базового уровня: до 300 000 ₽
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                  Для снятия лимита в 300 000 ₽ и участия в крупных автомобильных и бизнес-пулах добавьте поручителя (Кафила) и пройдите быструю верификацию по SMS и паспорту.
+                </p>
+                <div className="flex items-center gap-3 text-xs text-emerald-400 pt-1">
+                  <span>✓ 100% Онлайн</span>
+                  <span>•</span>
+                  <span>✓ SMS-подтверждение</span>
+                  <span>•</span>
+                  <span>✓ +20 баллов рейтинга Аманат</span>
+                </div>
+              </div>
+
+              <div className="shrink-0">
+                <button
+                  type="button"
+                  onClick={handleOpenVerification}
+                  className="w-full md:w-auto px-5 py-3 rounded-2xl bg-gradient-to-r from-[#d4af37] to-[#f59e0b] hover:from-[#e5bd46] hover:to-[#d97706] text-black font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl hover:scale-105 transition-all cursor-pointer"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>Пройти верификацию (Уровень 2)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 3. Trust Badges & Verification Methods */}
       <div className="bg-[#091712] border border-[#d4af37]/30 rounded-2xl p-6 shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
           <div>
@@ -243,16 +416,23 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
           </div>
 
           {/* Item 2: Passport */}
-          <div className="p-4 rounded-xl bg-[#061410] border border-blue-500/30 flex items-start gap-3">
+          <div 
+            onClick={handleOpenVerification}
+            className="p-4 rounded-xl bg-[#061410] border border-blue-500/30 flex items-start gap-3 cursor-pointer hover:border-blue-400 transition-colors"
+          >
             <div className="w-9 h-9 rounded-xl bg-blue-950 text-blue-300 border border-blue-500/40 flex items-center justify-center shrink-0">
               <FileCheck2 className="w-4 h-4 text-blue-400" />
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-1.5">
                 <strong className="text-xs text-white">Паспортные данные</strong>
-                {user.isPassportVerified && (
+                {user.isPassportVerified || isVerified ? (
                   <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 font-bold">
                     ✓ Проверен
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                    Не проверен
                   </span>
                 )}
               </div>
@@ -260,27 +440,38 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
                 Паспорт РФ верифицирован
               </p>
               <span className="text-[10px] text-slate-400 block">
-                Защита от анонимности и гарантия юридической чистоты договора
+                Защита от анонимности и гарантия чистоты договора
               </span>
             </div>
           </div>
 
           {/* Item 3: Guarantor Kafil */}
-          <div className="p-4 rounded-xl bg-[#061410] border border-amber-500/30 flex items-start gap-3">
+          <div 
+            onClick={handleOpenVerification}
+            className="p-4 rounded-xl bg-[#061410] border border-amber-500/30 flex items-start gap-3 cursor-pointer hover:border-amber-400 transition-colors"
+          >
             <div className="w-9 h-9 rounded-xl bg-amber-950 text-amber-300 border border-amber-500/40 flex items-center justify-center shrink-0">
               <UserCheck className="w-4 h-4 text-amber-400" />
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-1.5">
                 <strong className="text-xs text-white">Гарант (Кафаля)</strong>
-                {user.isGuarantorVerified && (
+                {isVerified ? (
                   <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold">
                     ✓ Закреплен
+                  </span>
+                ) : isPending ? (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-500/40 font-bold">
+                    ⏳ На проверке
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                    Не закреплен
                   </span>
                 )}
               </div>
               <p className="text-[11px] text-slate-300">
-                {user.guarantorName} ({user.guarantorRelation})
+                {user.guarantorName || 'Даудов Ибрагим Ахмедович'}
               </p>
               <span className="text-[10px] text-slate-400 block">
                 Солидарная ответственность по исламскому праву
@@ -312,7 +503,7 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
         </div>
       </div>
 
-      {/* 3. Amana Trust Score Visual Gauge & Rules */}
+      {/* 4. Amana Trust Score Visual Gauge & Rules */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Gauge Card (5 cols) */}
@@ -412,6 +603,20 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
             <div className="flex items-center justify-between p-3 rounded-xl bg-[#061410] border border-slate-800">
               <div className="flex items-center gap-3">
                 <div className="w-7 h-7 rounded-lg bg-emerald-950 text-emerald-300 border border-emerald-500/30 flex items-center justify-center font-bold">
+                  +20
+                </div>
+                <div>
+                  <strong className="text-white block">Верификация поручителя (Кафаля)</strong>
+                  <span className="text-slate-400">Закрепление поручителя по SMS и подтверждение паспорта (Уровень 2)</span>
+                </div>
+              </div>
+              <span className="text-emerald-400 font-bold font-mono-nums shrink-0">+20 баллов</span>
+            </div>
+
+            {/* Rule 4 */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-[#061410] border border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-7 h-7 rounded-lg bg-emerald-950 text-emerald-300 border border-emerald-500/30 flex items-center justify-center font-bold">
                   +25
                 </div>
                 <div>
@@ -422,7 +627,7 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
               <span className="text-emerald-400 font-bold font-mono-nums shrink-0">+25 баллов</span>
             </div>
 
-            {/* Rule 4: Yellow zone */}
+            {/* Rule 5: Yellow zone */}
             <div className="flex items-center justify-between p-3 rounded-xl bg-[#141208] border border-amber-500/30">
               <div className="flex items-center gap-3">
                 <div className="w-7 h-7 rounded-lg bg-amber-950 text-amber-300 border border-amber-500/40 flex items-center justify-center font-bold">
@@ -436,7 +641,7 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
               <span className="text-amber-400 font-bold font-mono-nums shrink-0">Без бонуса</span>
             </div>
 
-            {/* Rule 5: Overdue penalty (4th day) */}
+            {/* Rule 6: Overdue penalty */}
             <div className="flex items-center justify-between p-3 rounded-xl bg-[#170a0a] border border-rose-500/30">
               <div className="flex items-center gap-3">
                 <div className="w-7 h-7 rounded-lg bg-rose-950 text-rose-300 border border-rose-500/40 flex items-center justify-center font-bold">
@@ -454,7 +659,7 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
 
       </div>
 
-      {/* 4. VK Rating History Logs */}
+      {/* 5. VK Rating History Logs */}
       <div className="bg-[#091712] border border-[#d4af37]/30 rounded-2xl p-6 shadow-xl space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div>
@@ -462,7 +667,7 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
               История транзакций рейтинга ВК
             </h3>
             <p className="text-xs text-slate-400">
-              Все начисления за пунктуальность и своевременные взносы
+              Все начисления за пунктуальность, верификацию и своевременные взносы
             </p>
           </div>
         </div>
@@ -503,7 +708,7 @@ export const ProfileAmanaTab: React.FC<ProfileAmanaTabProps> = ({
         </div>
       </div>
 
-      {/* 5. Completed Kotels History */}
+      {/* 6. Completed Kotels History */}
       <div className="bg-[#091712] border border-[#d4af37]/30 rounded-2xl p-6 shadow-xl space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div>

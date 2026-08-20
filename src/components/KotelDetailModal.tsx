@@ -170,11 +170,15 @@ export const KotelDetailModal: React.FC<KotelDetailModalProps> = ({
 
               {!kotel.isUserJoined && onJoinKotel && (
                 <button
-                  onClick={() => { playButtonTap(); onJoinKotel(kotel.id); }}
-                  className="px-3 py-1.5 rounded-xl bg-[#d4af37] hover:bg-[#f59e0b] text-black text-xs font-bold flex items-center gap-1.5 shadow-md transition-all"
+                  onClick={() => handleSafeJoinSlot()}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
+                    isHighValue && !isTier2
+                      ? 'bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 text-white'
+                      : 'bg-[#d4af37] hover:bg-[#f59e0b] text-black'
+                  }`}
                 >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>Вступить в котел</span>
+                  {isHighValue && !isTier2 ? <ShieldCheck className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
+                  <span>{isHighValue && !isTier2 ? 'Вступить (Требуется Ур. 2)' : 'Вступить в котел'}</span>
                 </button>
               )}
 
@@ -186,6 +190,41 @@ export const KotelDetailModal: React.FC<KotelDetailModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* High-value Tier 2 Verification Prompt */}
+          {isHighValue && !isTier2 && (
+            <div className="bg-gradient-to-r from-[#171c10] via-[#20180a] to-[#12231c] border-2 border-[#d4af37]/60 rounded-2xl p-4 mb-5 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#d4af37]/20 border border-[#d4af37]/50 flex items-center justify-center shrink-0 text-[#d4af37]">
+                  <ShieldCheck className="w-6 h-6 text-[#fef08a]" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-bold">
+                      Лимит 300 000 ₽+ (Требуется Уровень 2)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-1">
+                    Пул этого котла составляет {kotel.totalPool.toLocaleString('ru-RU')} ₽. Для участия требуется верификация поручителя (Кафила) и паспортных данных.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  playButtonTap();
+                  if (onRequireTier2Verification) {
+                    onRequireTier2Verification();
+                  }
+                }}
+                className="shrink-0 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#f59e0b] hover:from-[#e5bd46] hover:to-[#d97706] text-black text-xs font-bold shadow-lg flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>Пройти верификацию</span>
+              </button>
+            </div>
+          )}
 
           {/* Metrics Overview Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">

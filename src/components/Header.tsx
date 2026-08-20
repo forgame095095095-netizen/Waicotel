@@ -1,5 +1,18 @@
 import React from 'react';
-import { ShieldCheck, Award, Sparkles, Scale, AlertCircle, RefreshCw, Bell } from 'lucide-react';
+import { 
+  ShieldCheck, 
+  Award, 
+  Sparkles, 
+  Scale, 
+  AlertCircle, 
+  RefreshCw, 
+  Bell, 
+  KeyRound, 
+  UserPlus, 
+  LogIn, 
+  Clock, 
+  CheckCircle2 
+} from 'lucide-react';
 import { UserProfile, Kotel } from '../types';
 import { playButtonTap } from '../utils/audio';
 
@@ -11,10 +24,12 @@ interface HeaderProps {
   onOpenSharia: () => void;
   onOpenOnboarding: () => void;
   onOpenTier2Verification: () => void;
-  onOpenSmsAuth: () => void;
+  onOpenSmsAuth: (mode?: 'login' | 'register') => void;
+  onOpenAdminLogin: () => void;
   onResetDemoData: () => void;
   onSwitchUserMode?: (mode: 'tier1' | 'pending' | 'tier2' | 'admin') => void;
   pendingRequestsCount?: number;
+  pendingRegistrationsCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -26,9 +41,11 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenOnboarding,
   onOpenTier2Verification,
   onOpenSmsAuth,
+  onOpenAdminLogin,
   onResetDemoData,
   onSwitchUserMode,
   pendingRequestsCount = 2,
+  pendingRegistrationsCount = 1,
 }) => {
   const getTierName = (score: number) => {
     if (score >= 120) return { name: 'Золотой уровень', short: 'Золотой', color: 'text-amber-300 border-amber-400/40 bg-amber-950/40' };
@@ -41,9 +58,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const activeKotel = kotels?.find(k => k.isUserJoined) || kotels?.[0];
   const deadlineDay = activeKotel?.paymentDeadlineDay || 15;
-  const overdueDay = deadlineDay + 4;
 
-  // Check if current date is within 3 days of deadline or in yellow/overdue zone
   const todayDate = new Date().getDate();
   const daysUntilDue = deadlineDay - todayDate;
   const isApproachingOrOverdue = (daysUntilDue < 3 && daysUntilDue >= 0) || (todayDate > deadlineDay);
@@ -53,11 +68,13 @@ export const Header: React.FC<HeaderProps> = ({
   const hasDueNotification = isApproachingOrOverdue && !isPaidThisMonth;
 
   const isTier2 = user.verificationTier === 2 && user.verificationStatus === 'verified';
-  const isPending = user.verificationStatus === 'pending';
+  const isPendingRegistration = user.registrationStatus === 'pending';
+  const isApprovedRegistration = user.registrationStatus === 'approved';
+  const isPendingTier2 = user.verificationStatus === 'pending';
 
   return (
     <header className="sticky top-0 z-40 border-b border-[#d4af37]/20 bg-[#070d0b]/90 backdrop-blur-md">
-      {/* Top Islamic Sharia Notice Ribbon & Sandbox Switcher */}
+      {/* Top Testing Scenario Bar & Islamic notice */}
       <div className="bg-gradient-to-r from-[#062c22] via-[#0b4234] to-[#062c22] border-b border-[#d4af37]/15 py-1.5 px-3 sm:px-6 lg:px-8 text-xs font-medium text-emerald-100">
         <div className="flex items-center gap-2 sm:gap-3 max-w-7xl mx-auto w-full justify-between flex-wrap">
           <div className="flex items-center gap-2">
@@ -65,74 +82,84 @@ export const Header: React.FC<HeaderProps> = ({
               0% РИБА
             </span>
             <span className="hidden lg:inline text-emerald-200/90 text-xs">
-              Исламская система ротационных сбережений • 2 уровня верификации (Кард аль-Хасан)
+              Вай Котел • Исламская P2P система сбережений с проверкой Кафила (поручителя)
             </span>
           </div>
 
-          {/* Quick Sandbox / Demo Mode Switcher */}
-          {onSwitchUserMode && (
-            <div className="flex items-center gap-1 bg-black/40 border border-[#d4af37]/30 rounded-lg p-0.5 text-[10px]">
-              <span className="text-slate-400 px-1 hidden sm:inline">Демо:</span>
-              <button
-                onClick={() => onSwitchUserMode('tier1')}
-                className={`px-1.5 py-0.5 rounded font-medium transition-all ${
-                  !isTier2 && !isPending
-                    ? 'bg-slate-700 text-white font-bold'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Переключить на Уровень 1: Стандарт (<300k)"
-              >
-                👤 Ур. 1
-              </button>
-              <button
-                onClick={() => onSwitchUserMode('pending')}
-                className={`px-1.5 py-0.5 rounded font-medium transition-all ${
-                  isPending
-                    ? 'bg-amber-600 text-white font-bold'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Переключить на статус: В ожидании одобрения"
-              >
-                ⏳ В ожидании
-              </button>
-              <button
-                onClick={() => onSwitchUserMode('tier2')}
-                className={`px-1.5 py-0.5 rounded font-medium transition-all ${
-                  isTier2
-                    ? 'bg-[#d4af37] text-black font-bold'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Переключить на Уровень 2: Верифицирован (300k+)"
-              >
-                🛡️ Ур. 2 (300k+)
-              </button>
-              <button
-                onClick={() => onSwitchUserMode('admin')}
-                className={`px-1.5 py-0.5 rounded font-medium transition-all ${
-                  activeTab === 'admin'
-                    ? 'bg-emerald-600 text-white font-bold'
-                    : 'text-emerald-300 hover:text-white'
-                }`}
-                title="Открыть панель администратора"
-              >
-                👑 Админ
-              </button>
-            </div>
-          )}
+          {/* Test Scenario Quick Toolbar */}
+          <div className="flex items-center gap-1.5 bg-black/50 border border-[#d4af37]/40 rounded-xl p-1 text-[11px]">
+            <span className="text-slate-400 px-1 font-semibold hidden md:inline">Сценарий:</span>
+            
+            {/* Step 1: Register */}
+            <button
+              onClick={() => { playButtonTap(); onOpenSmsAuth('register'); }}
+              className="px-2 py-0.5 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 font-bold transition-all flex items-center gap-1 cursor-pointer"
+              title="Шаг 1: Зарегистрировать нового пользователя (проверка блокировки дубликатов)"
+            >
+              <UserPlus className="w-3 h-3" />
+              <span>1. Регистрация</span>
+            </button>
 
-          <div className="flex items-center gap-3">
+            {/* Step 2: Pending switch */}
+            <button
+              onClick={() => onSwitchUserMode && onSwitchUserMode('pending')}
+              className={`px-2 py-0.5 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                isPendingRegistration
+                  ? 'bg-amber-500 text-black shadow-md'
+                  : 'bg-amber-950/80 hover:bg-amber-900 border border-amber-500/40 text-amber-300'
+              }`}
+              title="Шаг 2: Экран ожидания одобрения с песчаными часами"
+            >
+              <Clock className="w-3 h-3" />
+              <span>2. Ожидание ⏳</span>
+            </button>
+
+            {/* Step 3: Admin Login */}
+            <button
+              onClick={() => { playButtonTap(); onOpenAdminLogin(); }}
+              className={`px-2 py-0.5 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                activeTab === 'admin'
+                  ? 'bg-[#d4af37] text-black shadow-md'
+                  : 'bg-[#0f241a] hover:bg-[#163a2a] border border-[#d4af37]/60 text-[#fef08a]'
+              }`}
+              title="Шаг 3: Вход для Администратора (admin / admin123)"
+            >
+              <KeyRound className="w-3 h-3" />
+              <span>3. Вход Админа (admin123)</span>
+              {(pendingRegistrationsCount > 0 || pendingRequestsCount > 0) && (
+                <span className="px-1 py-0.1 bg-amber-400 text-black text-[9px] rounded-full font-mono">
+                  {pendingRegistrationsCount + pendingRequestsCount}
+                </span>
+              )}
+            </button>
+
+            {/* Step 4: Approved Dashboard */}
+            <button
+              onClick={() => onSwitchUserMode && onSwitchUserMode('tier1')}
+              className={`px-2 py-0.5 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                isApprovedRegistration && activeTab === 'dashboard'
+                  ? 'bg-emerald-500 text-black shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="Шаг 4: Главный экран Дашборда (после одобрения)"
+            >
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+              <span>4. Дашборд</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
             <button
               onClick={() => { playButtonTap(); onOpenSharia(); }}
-              className="flex items-center gap-1.5 text-xs text-[#d4af37] hover:text-[#fef08a] transition-colors underline decoration-dotted underline-offset-2"
+              className="hidden sm:flex items-center gap-1 text-xs text-[#d4af37] hover:text-[#fef08a] transition-colors underline decoration-dotted"
             >
               <Scale className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Шариатский стандарт и договор</span>
-              <span className="sm:hidden">Договор</span>
+              <span>Фетва & Договор</span>
             </button>
             <button
               onClick={() => { playButtonTap(); onResetDemoData(); }}
-              title="Сбросить тестовые данные"
-              className="text-emerald-400/70 hover:text-emerald-200 transition-colors p-1"
+              title="Сбросить локальную базу и демо-данные"
+              className="text-emerald-400/80 hover:text-emerald-200 transition-colors p-1"
             >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
@@ -166,7 +193,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Navigation Tabs */}
+          {/* Navigation Tabs (Only available if user is approved or in admin) */}
           <nav className="hidden md:flex items-center gap-0.5 lg:gap-1 p-1 rounded-xl bg-[#0b1b16]/80 border border-[#d4af37]/20">
             <button
               onClick={() => { playButtonTap(); setActiveTab('dashboard'); }}
@@ -210,49 +237,53 @@ export const Header: React.FC<HeaderProps> = ({
               Договор
             </button>
             
-            {/* Dedicated Admin Portal Tab */}
+            {/* Prominent Admin Portal Tab */}
             <button
               onClick={() => { playButtonTap(); setActiveTab('admin'); }}
               className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs lg:text-sm font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
                 activeTab === 'admin'
-                  ? 'bg-emerald-500 text-black shadow-md font-bold'
+                  ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-black shadow-md font-bold'
                   : 'text-emerald-300 hover:text-white hover:bg-emerald-950/60'
               }`}
             >
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Админ-портал</span>
-              {pendingRequestsCount > 0 && (
+              <span>Админ-панель</span>
+              {(pendingRegistrationsCount > 0 || pendingRequestsCount > 0) && (
                 <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-black text-[10px] font-bold">
-                  {pendingRequestsCount}
+                  {pendingRegistrationsCount + pendingRequestsCount}
                 </span>
               )}
             </button>
           </nav>
 
-          {/* User Status & VK Score Widget */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Right Action Widgets */}
+          <div className="flex items-center gap-2 shrink-0">
             
-            {/* Payment Due Notification Bell Icon */}
+            {/* Noticeable Admin Login Button in the Corner */}
             <button
-              onClick={() => { playButtonTap(); setActiveTab('dashboard'); }}
-              title={hasDueNotification ? 'Срочно: приближается срок взноса 15-го числа!' : 'Уведомления о платежах'}
-              className={`relative p-2 rounded-xl border transition-all ${
-                hasDueNotification
-                  ? 'bg-rose-950/80 border-rose-500/60 text-rose-300 shadow-lg shadow-rose-900/30 animate-pulse'
-                  : 'bg-[#0b1b16] border-slate-800 text-slate-300 hover:text-white hover:border-[#d4af37]/40'
-              }`}
+              onClick={() => { playButtonTap(); onOpenAdminLogin(); }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#081812] border border-[#d4af37]/50 text-[#fef08a] text-xs font-bold hover:bg-[#0c241b] hover:border-[#d4af37] transition-all shadow-sm cursor-pointer"
+              title="Вход для Администратора сервиса (Логин: admin, Пароль: admin123)"
             >
-              <Bell className="w-4 h-4" />
-              {hasDueNotification && (
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-[#070d0b]"></span>
-              )}
+              <KeyRound className="w-3.5 h-3.5 text-[#d4af37]" />
+              <span className="hidden sm:inline">Вход для Администратора</span>
+              <span className="sm:hidden">Админ</span>
             </button>
 
-            {/* User Profile Avatar with verified indicator */}
+            {/* Auth / Switch account button */}
+            <button
+              onClick={() => { playButtonTap(); onOpenSmsAuth('login'); }}
+              className="p-2 rounded-xl bg-[#0b1b16] border border-slate-800 text-slate-300 hover:text-white hover:border-[#d4af37]/50 transition-all"
+              title="Войти или зарегистрировать другой номер"
+            >
+              <LogIn className="w-4 h-4 text-emerald-400" />
+            </button>
+
+            {/* User Profile Avatar with status */}
             <div
               onClick={() => { playButtonTap(); setActiveTab('profile'); }}
               className="cursor-pointer flex items-center gap-2 group p-1 pr-1.5 sm:pr-2 rounded-xl bg-[#0b1b16] border border-slate-800 hover:border-[#d4af37]/50 transition-all"
-              title="Перейти в личный кабинет и настройки"
+              title={`Пользователь: ${user.fullName} (${user.registrationStatus === 'pending' ? 'На рассмотрении' : 'Одобрен'})`}
             >
               <div className="relative">
                 {user?.avatarUrl ? (
@@ -278,8 +309,8 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="text-xs font-semibold text-white group-hover:text-[#fef08a] transition-colors truncate max-w-[90px]">
                   {(user?.fullName || 'Пользователь').split(' ')[0]}
                 </div>
-                <div className="text-[9px] text-slate-400 truncate max-w-[90px]">
-                  {user?.occupation?.split('/')[0]?.trim() || 'Участник'}
+                <div className="text-[9px] font-mono truncate max-w-[90px] text-emerald-400">
+                  {user.phone.slice(-5)}
                 </div>
               </div>
             </div>
@@ -287,58 +318,22 @@ export const Header: React.FC<HeaderProps> = ({
             {/* VK Trust Score Badge */}
             <div 
               onClick={() => { playButtonTap(); setActiveTab('profile'); }}
-              className={`cursor-pointer flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1.5 rounded-xl border transition-all hover:scale-[1.02] ${tier.color}`}
+              className={`cursor-pointer flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-xl border transition-all hover:scale-[1.02] ${tier.color}`}
               title={`Рейтинг Аманат: ${user.amanaScore}/150 (${tier.name})`}
             >
-              <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-black/40 border border-[#d4af37]/30 flex items-center justify-center text-[#d4af37] shrink-0">
+              <div className="w-6 h-6 rounded-lg bg-black/40 border border-[#d4af37]/30 flex items-center justify-center text-[#d4af37] shrink-0">
                 <Award className="w-3.5 h-3.5" />
               </div>
               <div className="text-left">
                 <div className="flex items-center gap-1 leading-tight">
-                  <span className="text-[10px] sm:text-[11px] text-slate-400 font-medium">ВК:</span>
-                  <span className="text-xs sm:text-sm font-bold font-mono-nums text-white">
+                  <span className="text-[10px] text-slate-400 font-medium">ВК:</span>
+                  <span className="text-xs font-bold font-mono-nums text-white">
                     {user.amanaScore}
                   </span>
-                </div>
-                <div className="text-[9px] font-semibold tracking-wide whitespace-nowrap opacity-90 leading-tight">
-                  <span className="hidden xl:inline">{tier.name}</span>
-                  <span className="xl:hidden">{tier.short}</span>
                 </div>
               </div>
             </div>
 
-            {/* Verification Status Pill Button */}
-            {isTier2 ? (
-              <button
-                onClick={() => { playButtonTap(); onOpenTier2Verification(); }}
-                className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-950/80 to-[#0e2a20] border border-[#d4af37]/60 text-[#fef08a] text-xs font-semibold hover:border-[#d4af37] transition-all whitespace-nowrap"
-                title="Уровень 2 (300k+) подтвержден"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-[#d4af37]" />
-                <span className="hidden sm:inline">Уровень 2</span>
-                <span className="sm:hidden">Ур. 2</span>
-              </button>
-            ) : isPending ? (
-              <button
-                onClick={() => { playButtonTap(); onOpenTier2Verification(); }}
-                className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl bg-amber-950/80 border border-amber-500/50 text-amber-300 text-xs font-semibold animate-pulse hover:bg-amber-900/60 transition-all whitespace-nowrap"
-                title="Заявка 2-го уровня находится в ожидании проверки администратора"
-              >
-                <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden sm:inline">В ожидании (300k+)</span>
-                <span className="sm:hidden">В ожидании</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => { playButtonTap(); onOpenTier2Verification(); }}
-                className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#f59e0b] text-black text-xs font-bold hover:from-[#e5bd46] hover:to-[#d97706] shadow-sm transition-all whitespace-nowrap"
-                title="Пройти верификацию с поручителем для открытия пулов от 300 000 ₽"
-              >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Уровень 2 (300k+)</span>
-                <span className="sm:hidden">Ур. 2 (300k+)</span>
-              </button>
-            )}
           </div>
         </div>
 
@@ -393,9 +388,9 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <span>Админ</span>
-            {pendingRequestsCount > 0 && (
+            {(pendingRegistrationsCount > 0 || pendingRequestsCount > 0) && (
               <span className="px-1 py-0.1 rounded-full bg-amber-400 text-black text-[9px]">
-                {pendingRequestsCount}
+                {pendingRegistrationsCount + pendingRequestsCount}
               </span>
             )}
           </button>

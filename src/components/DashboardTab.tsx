@@ -157,10 +157,24 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           {/* User Info & Verified Guarantor */}
           <div className="space-y-3">
             <div className="flex items-center gap-3 flex-wrap">
-              <span className="px-3 py-1 rounded-full bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 shadow-sm">
+              <button
+                type="button"
+                onClick={() => { playButtonTap(); onOpenTier2Verification(); }}
+                className={`px-3 py-1 rounded-full border text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all hover:scale-105 cursor-pointer ${
+                  user.verificationStatus === 'verified'
+                    ? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-300'
+                    : 'bg-amber-950/90 border-amber-500/50 text-amber-300 animate-pulse'
+                }`}
+              >
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                {user.verificationStatus === 'verified' ? 'Личность и поручитель верифицированы' : 'Ожидает верификации'}
-              </span>
+                <span>
+                  {user.verificationStatus === 'verified'
+                    ? 'Личность и поручитель верифицированы (Ур. 2)'
+                    : user.verificationStatus === 'pending'
+                    ? 'Верификация Ур. 2: В ожидании'
+                    : 'Пройти верификацию поручителя (Ур. 2)'}
+                </span>
+              </button>
               <span className="px-3 py-1 rounded-full bg-[#d4af37]/20 border border-[#d4af37]/40 text-[#fef08a] text-xs font-bold font-mono-nums">
                 0% Риба
               </span>

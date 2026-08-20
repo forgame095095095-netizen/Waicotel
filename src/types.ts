@@ -1,10 +1,12 @@
 export type VerificationTier = 1 | 2;
 
+export type RegistrationStatus = 'pending' | 'approved' | 'rejected';
+
 export type VerificationStatus = 'tier1_basic' | 'pending' | 'verified' | 'rejected' | 'unregistered';
 
 export type PaymentStatus = 'paid' | 'grace_period' | 'overdue' | 'payout_received' | 'pending';
 
-export type RelationType = 'Брат' | 'Отец' | 'Дядя' | 'Родственник' | 'Близкий друг' | 'Коллега';
+export type RelationType = 'Брат' | 'Отец' | 'Дядя' | 'Друг' | 'Близкий друг' | 'Коллега' | 'Родственник';
 
 export interface PassportData {
   seriesNumber: string; // e.g. "96 14 883921"
@@ -51,6 +53,10 @@ export interface UserProfile {
   city: string;
   occupation: string; // e.g. "Предприниматель / Бизнесмен", "Маркетолог", "IT-специалист"
   occupationDetails?: string; // e.g. "Магазин одежды «Кавказ Трейд»", "Digital-агентство"
+  registrationStatus: RegistrationStatus; // 'pending' | 'approved' | 'rejected'
+  registeredAt?: string;
+  registrationApprovedAt?: string;
+  registrationRejectionReason?: string;
   verificationTier: VerificationTier; // Tier 1 (Basic <300k) or Tier 2 (High-Value 300k+)
   isOccupationVerified: boolean; // Verification badge for activity
   isPassportVerified: boolean; // Passport ID verified

@@ -1,76 +1,116 @@
 import React, { useState } from 'react';
 import { 
   ShieldCheck, 
-  ShieldAlert, 
   UserCheck, 
   Phone, 
-  PhoneCall, 
   CheckCircle2, 
   XCircle, 
   Clock, 
   Search, 
-  Filter, 
   Eye, 
   FileText, 
   Scale, 
   Award, 
   Sparkles, 
-  ChevronRight, 
   AlertTriangle,
   ZoomIn,
   MessageSquare,
   Lock,
-  ArrowUpRight
+  ArrowRight,
+  UserPlus,
+  Users,
+  LogOut,
+  Check,
+  Building,
+  KeyRound
 } from 'lucide-react';
 import { VerificationRequest, UserProfile } from '../types';
 import { playButtonTap, playSuccessChime } from '../utils/audio';
 
 interface AdminReviewPortalProps {
+  usersDb: UserProfile[];
+  onApproveUserRegistration: (userId: string) => void;
+  onRejectUserRegistration: (userId: string, reason: string) => void;
+  onSwitchToUser: (user: UserProfile) => void;
   requests: VerificationRequest[];
   onApproveRequest: (requestId: string) => void;
   onRejectRequest: (requestId: string, reason: string) => void;
   onSelectKotel?: (kotelTitle: string) => void;
   currentUser: UserProfile;
+  onExitAdmin?: () => void;
 }
 
 export const AdminReviewPortal: React.FC<AdminReviewPortalProps> = ({
-  requests,
+  usersDb = [],
+  onApproveUserRegistration,
+  onRejectUserRegistration,
+  onSwitchToUser,
+  requests = [],
   onApproveRequest,
   onRejectRequest,
   onSelectKotel,
   currentUser,
+  onExitAdmin,
 }) => {
-  const [filterTab, setFilterTab] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  // Main sub-tabs for Admin
+  const [adminSection, setAdminSection] = useState<'registrations' | 'verifications' | 'all_users'>('registrations');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Verification Request state
   const [inspectingRequest, setInspectingRequest] = useState<VerificationRequest | null>(null);
   const [zoomedImage, setZoomedImage] = useState<{ title: string; url: string; meta: string } | null>(null);
-  
-  // Rejection modal
   const [rejectingRequestId, setRejectingRequestId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('Нечеткий скан паспорта или блики на фото');
   const [customRejectNote, setCustomRejectNote] = useState('');
 
-  // Filter requests
-  const filteredRequests = requests.filter((r) => {
-    const matchesTab = filterTab === 'all' ? true : r.status === filterTab;
+  // User registration rejection state
+  const [rejectingUserId, setRejectingUserId] = useState<string | null>(null);
+  const [userRejectReason, setUserRejectReason] = useState('Некорректный номер телефона или неподтвержденный поручитель');
+
+  // Filtered pending users
+  const pendingUsers = usersDb.filter(u => u.registrationStatus === 'pending');
+  const approvedUsers = usersDb.filter(u => u.registrationStatus === 'approved');
+  const pendingTier2Requests = requests.filter(r => r.status === 'pending');
+
+  const filteredUsers = usersDb.filter(u => {
     const q = searchQuery.toLowerCase().trim();
-    const matchesSearch = 
-      !q ||
+    if (!q) return true;
+    return (
+      u.fullName.toLowerCase().includes(q) ||
+      u.phone.toLowerCase().includes(q) ||
+      u.guarantorPhone.toLowerCase().includes(q) ||
+      u.guarantorName?.toLowerCase().includes(q) ||
+      u.city.toLowerCase().includes(q)
+    );
+  });
+
+  const filteredRequests = requests.filter((r) => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+    return (
       r.userName.toLowerCase().includes(q) ||
       r.userPhone.toLowerCase().includes(q) ||
       r.guarantor.name.toLowerCase().includes(q) ||
       r.guarantor.phone.toLowerCase().includes(q) ||
-      r.targetPoolTitle?.toLowerCase().includes(q);
-
-    return matchesTab && matchesSearch;
+      r.targetPoolTitle?.toLowerCase().includes(q)
+    );
   });
 
-  const pendingCount = requests.filter(r => r.status === 'pending').length;
-  const approvedCount = requests.filter(r => r.status === 'approved').length;
-  const rejectedCount = requests.filter(r => r.status === 'rejected').length;
-  const totalVolume = requests.reduce((acc, r) => acc + (r.targetPoolAmount || 0), 0);
+  // Handlers for Registration approval
+  const handleApproveUser = (userId: string) => {
+    playSuccessChime();
+    onApproveUserRegistration(userId);
+  };
 
-  const handleApprove = (reqId: string) => {
+  const handleConfirmRejectUser = () => {
+    if (!rejectingUserId) return;
+    playButtonTap();
+    onRejectUserRegistration(rejectingUserId, userRejectReason);
+    setRejectingUserId(null);
+  };
+
+  // Handlers for Tier 2 verification
+  const handleApproveTier2 = (reqId: string) => {
     playSuccessChime();
     onApproveRequest(reqId);
     if (inspectingRequest?.id === reqId) {
@@ -78,7 +118,7 @@ export const AdminReviewPortal: React.FC<AdminReviewPortalProps> = ({
     }
   };
 
-  const handleConfirmReject = () => {
+  const handleConfirmRejectTier2 = () => {
     if (!rejectingRequestId) return;
     playButtonTap();
     const finalReason = customRejectNote ? `${rejectReason} (${customRejectNote})` : rejectReason;
@@ -91,10 +131,10 @@ export const AdminReviewPortal: React.FC<AdminReviewPortalProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto">
       
       {/* Top Banner & KPI Metrics */}
-      <div className="bg-gradient-to-r from-[#071d15] via-[#0d2a20] to-[#071d15] border border-[#d4af37]/30 rounded-2xl p-5 sm:p-6 shadow-xl">
+      <div className="bg-gradient-to-r from-[#071d15] via-[#0d2a20] to-[#071d15] border border-[#d4af37]/35 rounded-3xl p-5 sm:p-7 shadow-2xl">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-2xl bg-emerald-950 border border-[#d4af37]/50 flex items-center justify-center text-[#d4af37] shadow-inner">
@@ -102,519 +142,463 @@ export const AdminReviewPortal: React.FC<AdminReviewPortalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold">
-                  ПАНЕЛЬ АДМИНИСТРАТОРА
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold uppercase">
+                  ПАНЕЛЬ АДМИНИСТРАТОРА (ADMIN)
                 </span>
                 <span className="text-xs text-slate-400">
-                  Сверка Кафилов и Паспортов 300k+
+                  Учетная запись: <strong>admin</strong>
                 </span>
               </div>
               <h1 className="text-xl sm:text-2xl font-bold font-display text-white mt-1">
-                Центр модерации и верификации Вай Котел
+                Управление заявками и базой данных «Вай Котел»
               </h1>
             </div>
           </div>
 
-          {/* Quick status pill */}
-          <div className="flex items-center gap-2 bg-[#04100c] border border-slate-800 p-2 rounded-xl text-xs">
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-950/70 border border-amber-500/40 text-amber-300 rounded-lg font-bold">
-              <Clock className="w-3.5 h-3.5" />
-              <span>Ожидают: {pendingCount}</span>
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 rounded-lg font-bold">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Одобрено: {approvedCount}</span>
+          <div className="flex flex-wrap items-center gap-2.5">
+            {onExitAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  playButtonTap();
+                  onExitAdmin();
+                }}
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5 text-slate-400" />
+                <span>Выйти в приложение</span>
+              </button>
+            )}
+
+            <div className="flex items-center gap-2 bg-[#04100c] border border-slate-800 p-1.5 rounded-xl text-xs">
+              <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-950/70 border border-amber-500/40 text-amber-300 rounded-lg font-bold">
+                <Clock className="w-3.5 h-3.5" />
+                <span>Новых заявок: {pendingUsers.length}</span>
+              </div>
+              <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 rounded-lg font-bold">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Верификаций 300k+: {pendingTier2Requests.length}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* 4 Stats Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-5 border-t border-[#d4af37]/20">
-          <div className="bg-[#04120e]/80 border border-slate-800/80 p-3 rounded-xl">
-            <span className="text-[11px] text-slate-400 block">Всего заявок (Ур. 2)</span>
-            <strong className="text-lg sm:text-xl font-bold text-white font-mono">
-              {requests.length}
-            </strong>
-          </div>
-
-          <div className="bg-[#04120e]/80 border border-amber-500/30 p-3 rounded-xl">
-            <span className="text-[11px] text-amber-300/80 block">В ожидании решения</span>
-            <strong className="text-lg sm:text-xl font-bold text-amber-400 font-mono">
-              {pendingCount}
-            </strong>
-          </div>
-
-          <div className="bg-[#04120e]/80 border border-emerald-500/30 p-3 rounded-xl">
-            <span className="text-[11px] text-emerald-300/80 block">Золотой статус (Уровень 2)</span>
-            <strong className="text-lg sm:text-xl font-bold text-emerald-400 font-mono">
-              {approvedCount}
-            </strong>
-          </div>
-
-          <div className="bg-[#04120e]/80 border border-[#d4af37]/30 p-3 rounded-xl">
-            <span className="text-[11px] text-[#fef08a]/80 block">Общий лимит пулов</span>
-            <strong className="text-lg sm:text-xl font-bold text-[#fef08a] font-mono">
-              {(totalVolume / 1000000).toFixed(1)} млн ₽
-            </strong>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#091511] border border-slate-800 p-3 rounded-2xl">
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+        {/* Navigation Sub-Tabs */}
+        <div className="flex flex-wrap gap-2 mt-6 border-t border-slate-800/80 pt-4">
           <button
-            onClick={() => { playButtonTap(); setFilterTab('pending'); }}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-              filterTab === 'pending'
-                ? 'bg-amber-500 text-black shadow-md'
-                : 'text-slate-300 hover:text-white hover:bg-slate-800'
+            type="button"
+            onClick={() => { playButtonTap(); setAdminSection('registrations'); }}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              adminSection === 'registrations'
+                ? 'bg-[#d4af37] text-black shadow-lg shadow-amber-900/30'
+                : 'bg-[#051410] border border-slate-800 text-slate-300 hover:text-white'
             }`}
           >
-            <span>В ожидании</span>
-            {pendingCount > 0 && (
-              <span className="px-1.5 py-0.2 bg-black text-amber-400 rounded-full text-[10px]">
-                {pendingCount}
-              </span>
+            <UserPlus className="w-4 h-4" />
+            <span>1. Новые заявки на регистрацию ({pendingUsers.length})</span>
+            {pendingUsers.length > 0 && (
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
             )}
           </button>
 
           <button
-            onClick={() => { playButtonTap(); setFilterTab('all'); }}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-              filterTab === 'all'
-                ? 'bg-[#d4af37] text-black shadow-md'
-                : 'text-slate-300 hover:text-white hover:bg-slate-800'
+            type="button"
+            onClick={() => { playButtonTap(); setAdminSection('verifications'); }}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              adminSection === 'verifications'
+                ? 'bg-[#d4af37] text-black shadow-lg shadow-amber-900/30'
+                : 'bg-[#051410] border border-slate-800 text-slate-300 hover:text-white'
             }`}
           >
-            Все заявки ({requests.length})
+            <ShieldCheck className="w-4 h-4" />
+            <span>2. Верификация 300k+ (Tier 2) ({pendingTier2Requests.length})</span>
           </button>
 
           <button
-            onClick={() => { playButtonTap(); setFilterTab('approved'); }}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 ${
-              filterTab === 'approved'
-                ? 'bg-emerald-500 text-black shadow-md'
-                : 'text-slate-300 hover:text-white hover:bg-slate-800'
+            type="button"
+            onClick={() => { playButtonTap(); setAdminSection('all_users'); }}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              adminSection === 'all_users'
+                ? 'bg-[#d4af37] text-black shadow-lg shadow-amber-900/30'
+                : 'bg-[#051410] border border-slate-800 text-slate-300 hover:text-white'
             }`}
           >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Одобренные</span>
-          </button>
-
-          <button
-            onClick={() => { playButtonTap(); setFilterTab('rejected'); }}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 ${
-              filterTab === 'rejected'
-                ? 'bg-rose-500 text-white shadow-md'
-                : 'text-slate-300 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <XCircle className="w-3.5 h-3.5" />
-            <span>Отклоненные</span>
+            <Users className="w-4 h-4" />
+            <span>3. База всех пользователей ({usersDb.length})</span>
           </button>
         </div>
+      </div>
 
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+      {/* Search Bar */}
+      <div className="flex items-center justify-between gap-4 bg-[#091511] border border-slate-800 p-3 rounded-2xl">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Поиск по ФИО или телефону..."
-            className="w-full bg-[#030e0a] border border-slate-700 focus:border-[#d4af37] pl-9 pr-3 py-1.5 rounded-xl text-xs text-white focus:outline-none"
+            placeholder="Поиск по ФИО, номеру телефона заявителя или поручителя..."
+            className="w-full bg-[#040e0b] border border-slate-700/80 pl-10 pr-4 py-2 rounded-xl text-xs sm:text-sm text-white focus:outline-none focus:border-[#d4af37]"
           />
         </div>
       </div>
 
-      {/* Requests List */}
-      <div className="space-y-4">
-        {filteredRequests.length === 0 ? (
-          <div className="bg-[#091511] border border-slate-800 rounded-2xl p-10 text-center space-y-3">
-            <ShieldCheck className="w-12 h-12 text-slate-600 mx-auto" />
-            <h3 className="text-base font-bold text-white">
-              Заявок по выбранному фильтру нет
-            </h3>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              Все поступившие заявки обработаны модераторами, либо измените параметры поиска.
-            </p>
+      {/* SECTION 1: PENDING USER REGISTRATIONS TABLE */}
+      {adminSection === 'registrations' && (
+        <div className="bg-[#091712] border border-[#d4af37]/30 rounded-3xl p-5 sm:p-7 shadow-2xl space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-[#d4af37]" />
+                <span>Заявки на регистрацию, ожидающие проверки (Статус: pending)</span>
+              </h2>
+              <p className="text-xs text-slate-400">
+                После нажатия [ Одобрить ] пользователь получает доступ к главному экрану и Дашборду.
+              </p>
+            </div>
+            <span className="px-3 py-1 bg-amber-950/80 border border-amber-500/50 text-amber-300 rounded-full text-xs font-bold font-mono">
+              Ожидают: {pendingUsers.length}
+            </span>
           </div>
-        ) : (
-          filteredRequests.map((req) => {
-            const isPending = req.status === 'pending';
-            const isApproved = req.status === 'approved';
-            const isRejected = req.status === 'rejected';
 
-            return (
+          {pendingUsers.length === 0 ? (
+            <div className="py-12 text-center space-y-3 bg-[#05110d] rounded-2xl border border-slate-800">
+              <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto opacity-70" />
+              <h3 className="text-base font-bold text-white">Все новые заявки рассмотрены!</h3>
+              <p className="text-xs text-slate-400 max-w-md mx-auto">
+                Новые пользователи со статусом <strong>pending</strong> появятся здесь сразу после заполнения формы регистрации.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-200">
+                <thead className="bg-[#040e0b] text-slate-400 uppercase text-[11px] border-b border-slate-800 font-semibold">
+                  <tr>
+                    <th className="py-3 px-4">ФИО заявителя</th>
+                    <th className="py-3 px-4">Основной телефон</th>
+                    <th className="py-3 px-4">Поручитель (Кафил)</th>
+                    <th className="py-3 px-4">Кем приходится</th>
+                    <th className="py-3 px-4">Дата подачи</th>
+                    <th className="py-3 px-4">Статус</th>
+                    <th className="py-3 px-4 text-right">Действия администратора</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80">
+                  {pendingUsers.map((user) => (
+                    <tr key={user.id} className="hover:bg-slate-800/30 transition-colors">
+                      <td className="py-3.5 px-4 font-bold text-white">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-emerald-950 border border-[#d4af37]/40 flex items-center justify-center text-[#fef08a] font-bold text-xs">
+                            {user.fullName.slice(0, 1)}
+                          </div>
+                          <div>
+                            <div>{user.fullName}</div>
+                            <div className="text-[10px] text-slate-400 font-normal">{user.city || 'г. Грозный'} • {user.occupation}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-emerald-400 font-semibold">
+                        {user.phone}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-[#fef08a]">
+                        <div>{user.guarantorPhone}</div>
+                        {user.guarantorName && <div className="text-[10px] text-slate-400">{user.guarantorName}</div>}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700 text-[11px]">
+                          {user.guarantorRelation || 'Брат'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-400 text-[11px]">
+                        {user.registeredAt || 'Сегодня'}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="px-2.5 py-1 rounded-full bg-amber-950 text-amber-300 border border-amber-500/50 text-[10px] font-bold animate-pulse">
+                          ⏳ На проверке
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleApproveUser(user.id)}
+                            className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center gap-1 shadow-md transition-all cursor-pointer hover:scale-105"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Одобрить</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setRejectingUserId(user.id)}
+                            className="px-2.5 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 border border-rose-500/40 text-rose-300 font-semibold text-xs transition-all cursor-pointer"
+                          >
+                            Отклонить
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SECTION 2: TIER 2 VERIFICATIONS (300k+) */}
+      {adminSection === 'verifications' && (
+        <div className="bg-[#091712] border border-[#d4af37]/30 rounded-3xl p-5 sm:p-7 shadow-2xl space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-[#d4af37]" />
+                <span>Заявки на верификацию пулов от 300 000 ₽ (Уровень 2 🛡️)</span>
+              </h2>
+              <p className="text-xs text-slate-400">
+                Проверка паспортов участников, подтверждения SMS Кафила (поручителя) и шариатского договора.
+              </p>
+            </div>
+            <span className="px-3 py-1 bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 rounded-full text-xs font-bold font-mono">
+              Заявок: {filteredRequests.length}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filteredRequests.map((req) => (
               <div
                 key={req.id}
-                className={`bg-[#091511] border rounded-2xl p-4 sm:p-5 transition-all space-y-4 ${
-                  isPending
-                    ? 'border-amber-500/50 shadow-lg shadow-amber-950/20'
-                    : isApproved
-                    ? 'border-emerald-500/30'
-                    : 'border-rose-900/40 opacity-80'
-                }`}
+                className="bg-[#05110d] border border-slate-800 rounded-2xl p-4 space-y-3 hover:border-[#d4af37]/40 transition-all"
               >
-                {/* Request Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3.5">
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      {req.userAvatar ? (
-                        <img
-                          src={req.userAvatar}
-                          alt={req.userName}
-                          referrerPolicy="no-referrer"
-                          className="w-10 h-10 rounded-xl object-cover border border-[#d4af37]/40"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-[#d4af37]/40 flex items-center justify-center font-bold text-sm text-[#fef08a]">
-                          {req.userName.slice(0, 2).toUpperCase()}
-                        </div>
-                      )}
-                      <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 text-black flex items-center justify-center text-[9px] font-bold">
-                        ✓
-                      </span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-950 border border-[#d4af37]/40 flex items-center justify-center text-[#fef08a] font-bold text-sm">
+                      {req.userName.slice(0, 1)}
                     </div>
-
                     <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm sm:text-base font-bold text-white">
-                          {req.userName}
-                        </h3>
-                        <span className="text-xs text-slate-400 font-mono">
-                          {req.userPhone}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
-                        <span>{req.userCity}</span>
-                        <span>•</span>
-                        <span className="text-emerald-400">{req.userOccupation || 'Участник'}</span>
-                      </div>
+                      <h4 className="text-sm font-bold text-white">{req.userName}</h4>
+                      <p className="text-[11px] text-slate-400 font-mono">{req.userPhone}</p>
                     </div>
                   </div>
 
-                  {/* Status Badge & Target Pool */}
-                  <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-                    {req.targetPoolTitle && (
-                      <div className="px-2.5 py-1 rounded-lg bg-[#04120e] border border-slate-800 text-[11px] text-slate-300">
-                        Целевой котел: <strong className="text-[#fef08a]">{req.targetPoolTitle}</strong> ({req.targetPoolAmount?.toLocaleString('ru-RU')} ₽)
-                      </div>
-                    )}
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                    req.status === 'approved'
+                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
+                      : req.status === 'rejected'
+                      ? 'bg-rose-950 text-rose-300 border border-rose-500/40'
+                      : 'bg-amber-950 text-amber-300 border border-amber-500/40 animate-pulse'
+                  }`}>
+                    {req.status === 'approved' ? '✓ Одобрено (Ур. 2)' : req.status === 'rejected' ? '✕ Отклонено' : '⏳ На проверке'}
+                  </span>
+                </div>
 
-                    {isPending && (
-                      <span className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-bold flex items-center gap-1.5 animate-pulse">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>В ожидании</span>
-                      </span>
-                    )}
-
-                    {isApproved && (
-                      <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Одобрен (Ур. 2)</span>
-                      </span>
-                    )}
-
-                    {isRejected && (
-                      <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-xs font-bold flex items-center gap-1.5">
-                        <XCircle className="w-3.5 h-3.5" />
-                        <span>Отклонен</span>
-                      </span>
-                    )}
+                <div className="bg-[#020b08] p-3 rounded-xl border border-slate-800/80 text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Целевой фонд:</span>
+                    <strong className="text-emerald-400">{req.targetPoolTitle || '300 000+ ₽'} ({req.targetPoolAmount?.toLocaleString('ru-RU')} ₽)</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Поручитель (Кафил):</span>
+                    <span className="text-[#fef08a] font-semibold">{req.guarantor.name} ({req.guarantor.relation}) • {req.guarantor.phone}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Паспортные данные:</span>
+                    <span className="text-slate-300 font-mono">{req.userPassport.seriesNumber}</span>
                   </div>
                 </div>
 
-                {/* Main Inspection Grid: Guarantor + Passports Side-by-Side */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-                  
-                  {/* Card 1: Guarantor Info */}
-                  <div className="bg-[#051711] border border-slate-800/90 rounded-xl p-3 space-y-2.5">
-                    <div className="flex items-center justify-between text-xs font-bold text-[#fef08a] border-b border-slate-800 pb-1.5">
-                      <span className="flex items-center gap-1.5">
-                        <PhoneCall className="w-3.5 h-3.5 text-[#d4af37]" />
-                        <span>Поручитель (Кафил)</span>
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30">
-                        {req.guarantor.relation}
-                      </span>
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[11px] text-slate-400">Подано: {req.submittedAt}</span>
+                  {req.status === 'pending' ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleApproveTier2(req.id)}
+                        className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
+                      >
+                        Присвоить Ур. 2 🛡️
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRejectingRequestId(req.id)}
+                        className="px-2.5 py-1 bg-rose-950 text-rose-300 border border-rose-500/40 text-xs rounded-xl hover:bg-rose-900 cursor-pointer"
+                      >
+                        Отклонить
+                      </button>
                     </div>
-
-                    <div className="space-y-1 text-xs">
-                      <div className="text-white font-semibold">{req.guarantor.name}</div>
-                      <div className="text-slate-300 font-mono text-[11px]">{req.guarantor.phone}</div>
-                    </div>
-
-                    <div className="p-2 rounded-lg bg-[#020b08] border border-emerald-500/30 text-[11px] text-emerald-300 flex items-center justify-between">
-                      <span className="flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>SMS-код подтвержден</span>
-                      </span>
-                      <span className="text-[10px] text-slate-400">{req.guarantor.smsConfirmedAt || 'Сегодня'}</span>
-                    </div>
-                  </div>
-
-                  {/* Card 2: User Passport */}
-                  <div className="bg-[#051711] border border-slate-800/90 rounded-xl p-3 space-y-2.5">
-                    <div className="flex items-center justify-between text-xs font-bold text-slate-200 border-b border-slate-800 pb-1.5">
-                      <span className="flex items-center gap-1.5">
-                        <UserCheck className="w-3.5 h-3.5 text-[#d4af37]" />
-                        <span>Паспорт заявителя</span>
-                      </span>
-                      <span className="text-[10px] font-mono text-emerald-400">
-                        {req.userPassport.seriesNumber}
-                      </span>
-                    </div>
-
-                    <div className="text-[11px] text-slate-300 truncate">
-                      {req.userPassport.issuedBy || 'МВД по Чеченской Республике'}
-                    </div>
-
-                    {/* Passport Scan Thumbnail with Zoom */}
-                    <div 
-                      onClick={() => {
-                        playButtonTap();
-                        setZoomedImage({
-                          title: `Паспорт заявителя: ${req.userName}`,
-                          url: req.userPassport.photoUrl,
-                          meta: `${req.userPassport.seriesNumber} • ${req.userPassport.issuedBy || 'МВД по ЧР'}`
-                        });
-                      }}
-                      className="group relative rounded-lg border border-slate-700 bg-black overflow-hidden h-20 cursor-pointer flex items-center justify-center"
-                    >
-                      <img
-                        src={req.userPassport.photoUrl}
-                        alt="Паспорт заявителя"
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover group-hover:scale-105 transition-all opacity-85 group-hover:opacity-100"
-                      />
-                      <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center gap-1 text-[11px] font-semibold text-white">
-                        <ZoomIn className="w-3.5 h-3.5 text-[#fef08a]" />
-                        <span>Увеличить скан</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Card 3: Guarantor Passport */}
-                  <div className="bg-[#051711] border border-slate-800/90 rounded-xl p-3 space-y-2.5">
-                    <div className="flex items-center justify-between text-xs font-bold text-slate-200 border-b border-slate-800 pb-1.5">
-                      <span className="flex items-center gap-1.5">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Паспорт поручителя</span>
-                      </span>
-                      <span className="text-[10px] font-mono text-emerald-400">
-                        {req.guarantor.passport.seriesNumber}
-                      </span>
-                    </div>
-
-                    <div className="text-[11px] text-slate-300 truncate">
-                      {req.guarantor.passport.issuedBy || 'МВД по Чеченской Республике'}
-                    </div>
-
-                    {/* Passport Scan Thumbnail with Zoom */}
-                    <div 
-                      onClick={() => {
-                        playButtonTap();
-                        setZoomedImage({
-                          title: `Паспорт поручителя: ${req.guarantor.name} (${req.guarantor.relation})`,
-                          url: req.guarantor.passport.photoUrl,
-                          meta: `${req.guarantor.passport.seriesNumber} • ${req.guarantor.passport.issuedBy || 'МВД по ЧР'}`
-                        });
-                      }}
-                      className="group relative rounded-lg border border-slate-700 bg-black overflow-hidden h-20 cursor-pointer flex items-center justify-center"
-                    >
-                      <img
-                        src={req.guarantor.passport.photoUrl}
-                        alt="Паспорт поручителя"
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover group-hover:scale-105 transition-all opacity-85 group-hover:opacity-100"
-                      />
-                      <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center gap-1 text-[11px] font-semibold text-white">
-                        <ZoomIn className="w-3.5 h-3.5 text-[#fef08a]" />
-                        <span>Увеличить скан</span>
-                      </div>
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* Digital Signature & Contract Verification Ribbon */}
-                <div className="bg-[#030e0a] border border-slate-800/80 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-slate-300">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-950/80 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-                      <Scale className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-white">Договор Кафаля подписан:</span>
-                        <span className="font-serif italic text-[#fef08a]">{req.contractSignature}</span>
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                        Хэш соглашения: {req.signatureHash || 'SHA256:8f9a21b3...'} • {req.contractSignedAt}
-                      </div>
-                    </div>
-                  </div>
-
-                  {req.rejectionReason && (
-                    <div className="p-2 rounded-lg bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-1.5">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                      <span>Причина отказа: {req.rejectionReason}</span>
-                    </div>
+                  ) : (
+                    <span className="text-xs text-emerald-400 font-semibold">Статус зафиксирован</span>
                   )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-                  {/* Actions for Admin */}
-                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                    {isPending && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => { playButtonTap(); setRejectingRequestId(req.id); }}
-                          className="px-3 py-1.5 rounded-xl bg-rose-950/70 border border-rose-500/40 hover:bg-rose-900 text-rose-300 text-xs font-semibold transition-all flex items-center gap-1"
-                        >
-                          <XCircle className="w-3.5 h-3.5" />
-                          <span>Отклонить</span>
-                        </button>
+      {/* SECTION 3: ALL USERS IN LOCALSTORAGE DATABASE */}
+      {adminSection === 'all_users' && (
+        <div className="bg-[#091712] border border-[#d4af37]/30 rounded-3xl p-5 sm:p-7 shadow-2xl space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Users className="w-5 h-5 text-[#d4af37]" />
+                <span>База данных пользователей (localStorage: wai_kotel_users_db)</span>
+              </h2>
+              <p className="text-xs text-slate-400">
+                Все зарегистрированные аккаунты. Нажмите «Войти под этим пользователем», чтобы мгновенно протестировать его вид.
+              </p>
+            </div>
+            <span className="px-3 py-1 bg-slate-800 text-slate-200 rounded-full text-xs font-bold font-mono">
+              Всего в БД: {usersDb.length}
+            </span>
+          </div>
 
-                        <button
-                          type="button"
-                          onClick={() => handleApprove(req.id)}
-                          className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#f59e0b] hover:from-[#e5bd46] hover:to-[#d97706] text-black text-xs font-bold shadow-md transition-all flex items-center gap-1.5"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Одобрить (Уровень 2)</span>
-                        </button>
-                      </>
-                    )}
-
-                    {!isPending && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-200">
+              <thead className="bg-[#040e0b] text-slate-400 uppercase text-[11px] border-b border-slate-800 font-semibold">
+                <tr>
+                  <th className="py-3 px-4">Пользователь</th>
+                  <th className="py-3 px-4">Номер телефона</th>
+                  <th className="py-3 px-4">Поручитель</th>
+                  <th className="py-3 px-4">Статус регистрации</th>
+                  <th className="py-3 px-4">Уровень верификации</th>
+                  <th className="py-3 px-4">Рейтинг ВК</th>
+                  <th className="py-3 px-4 text-right">Тестирование</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80">
+                {filteredUsers.map((user) => (
+                  <tr key={user.id} className="hover:bg-slate-800/30 transition-colors">
+                    <td className="py-3.5 px-4 font-bold text-white">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-950 border border-[#d4af37]/40 flex items-center justify-center text-[#fef08a] font-bold text-xs">
+                          {user.fullName.slice(0, 1)}
+                        </div>
+                        <div>
+                          <div>{user.fullName} {user.id === currentUser.id ? '(Текущий)' : ''}</div>
+                          <div className="text-[10px] text-slate-400 font-normal">{user.city} • {user.occupation}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4 font-mono text-emerald-400">
+                      {user.phone}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono text-slate-300">
+                      <div>{user.guarantorPhone}</div>
+                      <div className="text-[10px] text-slate-400">{user.guarantorRelation}</div>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        user.registrationStatus === 'approved'
+                          ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
+                          : user.registrationStatus === 'rejected'
+                          ? 'bg-rose-950 text-rose-300 border border-rose-500/40'
+                          : 'bg-amber-950 text-amber-300 border border-amber-500/40'
+                      }`}>
+                        {user.registrationStatus === 'approved' ? '✓ Одобрен' : user.registrationStatus === 'rejected' ? '✕ Отклонен' : '⏳ В ожидании'}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                        user.verificationTier === 2 && user.verificationStatus === 'verified'
+                          ? 'bg-[#d4af37]/20 text-[#fef08a] border border-[#d4af37]/50'
+                          : 'bg-slate-800 text-slate-300'
+                      }`}>
+                        {user.verificationTier === 2 && user.verificationStatus === 'verified' ? '★ Уровень 2 (300k+)' : 'Уровень 1 (<300k)'}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-[#fef08a]">
+                      {user.amanaScore}/150
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
                       <button
                         type="button"
                         onClick={() => {
-                          if (isApproved) {
-                            setRejectingRequestId(req.id);
-                          } else {
-                            handleApprove(req.id);
-                          }
+                          playButtonTap();
+                          onSwitchToUser(user);
                         }}
-                        className="text-xs text-slate-400 hover:text-white underline decoration-dotted"
+                        className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-[#d4af37] hover:text-black border border-slate-700 font-semibold text-xs transition-all cursor-pointer"
                       >
-                        {isApproved ? 'Отозвать верификацию' : 'Пересмотреть и одобрить'}
+                        Войти под этим аккаунтом →
                       </button>
-                    )}
-                  </div>
-                </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* LIGHTBOX MODAL FOR ZOOMING PASSPORT SCANS */}
-      {zoomedImage && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/90 backdrop-blur-md p-4 flex justify-center items-center">
-          <div className="relative max-w-3xl w-full bg-[#091511] border border-[#d4af37]/40 rounded-2xl p-5 shadow-2xl text-slate-200 space-y-4 my-auto">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="text-base font-bold text-white">
-                  {zoomedImage.title}
-                </h3>
-                <p className="text-xs text-slate-400 font-mono">
-                  {zoomedImage.meta}
-                </p>
-              </div>
-              <button
-                onClick={() => setZoomedImage(null)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="rounded-xl overflow-hidden bg-black border border-slate-800 max-h-[70vh] flex items-center justify-center">
-              <img
-                src={zoomedImage.url}
-                alt="Zoomed Scan"
-                referrerPolicy="no-referrer"
-                className="w-full h-auto max-h-[68vh] object-contain"
-              />
-            </div>
-
-            <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
-              <span>Документ защищен протоколом шифрования Вай Котел</span>
+      {/* Reject User Registration Modal */}
+      {rejectingUserId && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-4 flex justify-center items-center">
+          <div className="bg-[#091511] border border-rose-500/50 rounded-2xl p-6 max-w-md w-full space-y-4 text-slate-200">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-rose-400" />
+              <span>Отклонить заявку на регистрацию</span>
+            </h3>
+            <p className="text-xs text-slate-300">
+              Укажите причину отклонения. Пользователь увидит это уведомление при попытке входа.
+            </p>
+            <textarea
+              value={userRejectReason}
+              onChange={(e) => setUserRejectReason(e.target.value)}
+              rows={3}
+              className="w-full bg-[#030e0a] border border-slate-700 p-3 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500"
+            />
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setZoomedImage(null)}
-                className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold"
+                onClick={() => setRejectingUserId(null)}
+                className="px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white"
               >
-                Закрыть просмотр
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRejectUser}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs cursor-pointer"
+              >
+                Подтвердить отклонение
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* REJECTION REASON DIALOG MODAL */}
+      {/* Reject Tier 2 Verification Modal */}
       {rejectingRequestId && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/90 backdrop-blur-md p-4 flex justify-center items-center">
-          <div className="relative max-w-md w-full bg-[#091511] border border-rose-500/40 rounded-2xl p-5 shadow-2xl text-slate-200 space-y-4 my-auto">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
-                <AlertTriangle className="w-4 h-4" />
-                <span>Отклонение заявки Tier 2</span>
-              </div>
-              <button
-                onClick={() => setRejectingRequestId(null)}
-                className="text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <label className="block font-semibold text-slate-300">
-                Выберите причину отклонения:
-              </label>
-              <select
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                className="w-full bg-[#030e0a] border border-slate-700 px-3 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500"
-              >
-                <option value="Нечеткий скан паспорта или блики на фото">Нечеткий скан паспорта или блики на фото</option>
-                <option value="Поручитель не подтвердил согласие по телефону">Поручитель не подтвердил согласие по телефону</option>
-                <option value="Несоответствие данных заявителя и паспорта">Несоответствие данных заявителя и паспорта</option>
-                <option value="Требуется замена поручителя на близкого родственника">Требуется замена поручителя на близкого родственника</option>
-                <option value="Иная причина">Иная причина</option>
-              </select>
-
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">
-                  Комментарий для участника (опционально):
-                </label>
-                <textarea
-                  value={customRejectNote}
-                  onChange={(e) => setCustomRejectNote(e.target.value)}
-                  placeholder="Например: Пожалуйста, загрузите разворот паспорта при дневном освещении без пальцев на кадре..."
-                  rows={3}
-                  className="w-full bg-[#030e0a] border border-slate-700 px-3 py-2 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500"
-                />
-              </div>
-            </div>
-
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-4 flex justify-center items-center">
+          <div className="bg-[#091511] border border-rose-500/50 rounded-2xl p-6 max-w-md w-full space-y-4 text-slate-200">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-rose-400" />
+              <span>Отклонить верификацию 300k+</span>
+            </h3>
+            <p className="text-xs text-slate-300">
+              Укажите причину отклонения верификации:
+            </p>
+            <input
+              type="text"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              className="w-full bg-[#030e0a] border border-slate-700 p-2.5 rounded-xl text-xs text-white focus:outline-none"
+            />
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setRejectingRequestId(null)}
-                className="px-3 py-2 rounded-xl border border-slate-700 text-xs text-slate-300 hover:bg-slate-800"
+                className="px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white"
               >
                 Отмена
               </button>
               <button
                 type="button"
-                onClick={handleConfirmReject}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md"
+                onClick={handleConfirmRejectTier2}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs cursor-pointer"
               >
-                Отклонить заявку
+                Подтвердить
               </button>
             </div>
           </div>
