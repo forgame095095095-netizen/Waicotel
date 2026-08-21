@@ -143,10 +143,10 @@ export const AdminReviewPortal: React.FC<AdminReviewPortalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold uppercase">
-                  ПАНЕЛЬ АДМИНИСТРАТОРА (ADMIN)
+                  ПАНЕЛЬ АДМИНИСТРАТОРА
                 </span>
                 <span className="text-xs text-slate-400">
-                  Учетная запись: <strong>admin</strong>
+                  Спец-номер: <strong className="text-emerald-400 font-mono">+7 (999) 000-00-00</strong>
                 </span>
               </div>
               <h1 className="text-xl sm:text-2xl font-bold font-display text-white mt-1">
@@ -166,7 +166,7 @@ export const AdminReviewPortal: React.FC<AdminReviewPortalProps> = ({
                 className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5 text-slate-400" />
-                <span>Выйти в приложение</span>
+                <span>Выйти</span>
               </button>
             )}
 

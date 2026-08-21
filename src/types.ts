@@ -53,6 +53,7 @@ export interface UserProfile {
   city: string;
   occupation: string; // e.g. "Предприниматель / Бизнесмен", "Маркетолог", "IT-специалист"
   occupationDetails?: string; // e.g. "Магазин одежды «Кавказ Трейд»", "Digital-агентство"
+  role?: 'admin' | 'user';
   registrationStatus: RegistrationStatus; // 'pending' | 'approved' | 'rejected'
   registeredAt?: string;
   registrationApprovedAt?: string;
@@ -139,6 +140,7 @@ export interface Kotel {
   adminPhone: string;
   adminAvatarUrl?: string;
   adminOccupation?: string;
+  creatorId?: string;
   isAdminOccupationVerified?: boolean;
   isAdminPassportVerified?: boolean;
   requireOccupationVerified?: boolean; // Creator can require verified occupation for joiners

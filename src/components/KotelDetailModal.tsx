@@ -17,6 +17,7 @@ import {
   ListOrdered,
   Shuffle,
   UserPlus,
+  UserMinus,
   Share2
 } from 'lucide-react';
 import { Kotel, KotelMember, PaymentStatus, UserProfile } from '../types';
@@ -34,6 +35,7 @@ interface KotelDetailModalProps {
   onOpenBaraban: (kotelId: string) => void;
   onUpdateMemberStatus: (kotelId: string, memberId: string, newStatus: PaymentStatus) => void;
   onOpenShareKotel?: (kotel: Kotel) => void;
+  onExcludeMember?: (kotelId: string, memberId: string) => void;
 }
 
 export const KotelDetailModal: React.FC<KotelDetailModalProps> = ({
@@ -47,6 +49,7 @@ export const KotelDetailModal: React.FC<KotelDetailModalProps> = ({
   onOpenBaraban,
   onUpdateMemberStatus,
   onOpenShareKotel,
+  onExcludeMember,
 }) => {
   const [selectedMonth, setSelectedMonth] = useState<number>(kotel.currentCycleMonth || 1);
   const [selectedReceiptUrl, setSelectedReceiptUrl] = useState<string | null>(null);
@@ -58,6 +61,14 @@ export const KotelDetailModal: React.FC<KotelDetailModalProps> = ({
 
   const isTier2 = user?.verificationTier === 2 && user?.verificationStatus === 'verified';
   const isHighValue = kotel.totalPool >= 300000;
+
+  // Moderator check: Creator of the kotel or listed admin
+  const isModerator = (user && kotel.creatorId && user.id === kotel.creatorId) ||
+    (user && kotel.adminName && (user.fullName.includes(kotel.adminName) || kotel.adminName.includes(user.fullName))) ||
+    (user && kotel.adminPhone && user.phone === kotel.adminPhone);
+
+  // Can exclude members ONLY BEFORE the start of kotel / baraban
+  const canExcludeMembers = isModerator && kotel.status !== 'active' && kotel.status !== 'completed' && !kotel.drawCompleted;
 
   const handleSafeJoinSlot = (slotNum?: number) => {
     playButtonTap();
@@ -258,7 +269,7 @@ export const KotelDetailModal: React.FC<KotelDetailModalProps> = ({
           </div>
 
           {/* Organizer Trust & Activity Banner */}
-          <div className="bg-[#051610] border border-[#d4af37]/35 rounded-xl p-3.5 sm:p-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+          <div className="bg-[#051610] border border-[#d4af37]/35 rounded-xl p-3.5 sm:p-4 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#0e3528] to-[#081f18] border border-[#d4af37]/50 flex items-center justify-center font-bold text-sm text-[#fef08a] shadow-inner shrink-0">
                 {kotel.adminName.slice(0, 2).toUpperCase()}
@@ -290,6 +301,33 @@ export const KotelDetailModal: React.FC<KotelDetailModalProps> = ({
               showLabels={true}
             />
           </div>
+
+          {/* Moderator Control Status Bar */}
+          {isModerator && (
+            <div className="bg-[#092218] border-2 border-[#d4af37]/50 rounded-xl p-3.5 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shadow-lg">
+              <div className="flex items-center gap-2.5">
+                <span className="px-2.5 py-1 rounded-lg bg-[#d4af37] text-black font-extrabold text-xs shadow-md">
+                  🛡️ ВЫ МОДЕРАТОР
+                </span>
+                <p className="text-xs text-slate-200">
+                  {canExcludeMembers ? (
+                    <span>
+                      Вы можете управлять составом участников и <strong>исключать кандидатов</strong> до запуска жеребьевки или старта.
+                    </span>
+                  ) : (
+                    <span className="text-amber-300">
+                      ⚠️ Котел уже запущен (активен), функция исключения участников заблокирована.
+                    </span>
+                  )}
+                </p>
+              </div>
+              {canExcludeMembers && (
+                <span className="text-[11px] text-emerald-400 font-semibold shrink-0 bg-emerald-950 px-2 py-0.5 rounded-md border border-emerald-500/40">
+                  Очередь открыта для редактирования
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Manual Mode: Slot Selection Banner if user not yet joined */}
           {isManual && !kotel.isUserJoined && onJoinKotel && (
@@ -675,6 +713,24 @@ export const KotelDetailModal: React.FC<KotelDetailModalProps> = ({
                         {/* Action / Receipt button */}
                         <td className="py-3 px-3 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            {/* Moderator Exclude button before start */}
+                            {canExcludeMembers && member.id !== user?.id && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm(`Исключить участника «${member.name}» из котла и освободить место #${member.drawNumber || ''}?`)) {
+                                    playButtonTap();
+                                    onExcludeMember?.(kotel.id, member.id);
+                                  }
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-rose-950/80 border border-rose-500/50 hover:bg-rose-900 text-rose-200 text-xs font-semibold flex items-center gap-1 shadow-sm transition-all cursor-pointer"
+                                title="Исключить участника и освободить место"
+                              >
+                                <UserMinus className="w-3.5 h-3.5 text-rose-400" />
+                                <span>Исключить</span>
+                              </button>
+                            )}
+
                             {member.receiptUrl ? (
                               <button
                                 onClick={() => { playButtonTap(); setSelectedReceiptUrl(member.receiptUrl!); }}
@@ -699,9 +755,9 @@ export const KotelDetailModal: React.FC<KotelDetailModalProps> = ({
                                 <Send className="w-3 h-3" />
                                 <span>{reminderSentMemberId === member.id ? 'Отправлено ✓' : 'Напомнить Кафилу'}</span>
                               </button>
-                            ) : (
+                            ) : !canExcludeMembers ? (
                               <span className="text-[11px] text-slate-500">—</span>
-                            )}
+                            ) : null}
                           </div>
                         </td>
                       </tr>
@@ -832,6 +888,24 @@ export const KotelDetailModal: React.FC<KotelDetailModalProps> = ({
                         {/* Action / Receipt button */}
                         <td className="py-3 px-3 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            {/* Moderator Exclude button before start */}
+                            {canExcludeMembers && member.id !== user?.id && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm(`Исключить участника «${member.name}» из котла?`)) {
+                                    playButtonTap();
+                                    onExcludeMember?.(kotel.id, member.id);
+                                  }
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-rose-950/80 border border-rose-500/50 hover:bg-rose-900 text-rose-200 text-xs font-semibold flex items-center gap-1 shadow-sm transition-all cursor-pointer"
+                                title="Исключить участника"
+                              >
+                                <UserMinus className="w-3.5 h-3.5 text-rose-400" />
+                                <span>Исключить</span>
+                              </button>
+                            )}
+
                             {member.receiptUrl ? (
                               <button
                                 onClick={() => { playButtonTap(); setSelectedReceiptUrl(member.receiptUrl!); }}
@@ -856,9 +930,9 @@ export const KotelDetailModal: React.FC<KotelDetailModalProps> = ({
                                 <Send className="w-3 h-3" />
                                 <span>{reminderSentMemberId === member.id ? 'Отправлено ✓' : 'Напомнить Кафилу'}</span>
                               </button>
-                            ) : (
+                            ) : !canExcludeMembers ? (
                               <span className="text-[11px] text-slate-500">—</span>
-                            )}
+                            ) : null}
                           </div>
                         </td>
                       </tr>

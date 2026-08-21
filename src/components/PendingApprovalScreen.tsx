@@ -1,36 +1,25 @@
 import React, { useState } from 'react';
 import { 
   Hourglass, 
-  ShieldCheck, 
   Clock, 
   UserCheck, 
-  Phone, 
   RefreshCw, 
-  KeyRound, 
-  ArrowRight, 
-  CheckCircle2, 
-  Sparkles,
-  LogOut,
-  AlertTriangle,
+  LogOut, 
   Scale
 } from 'lucide-react';
 import { UserProfile } from '../types';
-import { playButtonTap, playSuccessChime } from '../utils/audio';
+import { playButtonTap } from '../utils/audio';
 
 interface PendingApprovalScreenProps {
   user: UserProfile;
   onRefreshStatus: () => void;
-  onOpenAdminLogin: () => void;
-  onOpenRegisterOrLogin: () => void;
-  onFastApproveCurrent: () => void;
+  onLogout: () => void;
 }
 
 export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
   user,
   onRefreshStatus,
-  onOpenAdminLogin,
-  onOpenRegisterOrLogin,
-  onFastApproveCurrent,
+  onLogout,
 }) => {
   const [isChecking, setIsChecking] = useState(false);
   const [lastCheckedTime, setLastCheckedTime] = useState('Только что');
@@ -79,10 +68,10 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
 
           <div className="space-y-2 max-w-lg mx-auto">
             <h1 className="text-2xl sm:text-3xl font-bold font-display text-white tracking-tight">
-              Ваша заявка передана администратору
+              Заявка на рассмотрении у администратора
             </h1>
             <p className="text-sm text-slate-300 leading-relaxed">
-              Ожидайте подтверждения модератором (обычно 1–3 часа). Доступ к Дашборду сборов, закрытым пулам и жеребьевкам откроется автоматически после проверки номера и поручителя.
+              Ожидайте подтверждения модератором (обычно 1–3 часа). Доступ к созданию котлов, участию в сборах и жеребьевкам откроется автоматически после проверки номера и поручителя.
             </p>
           </div>
         </div>
@@ -92,7 +81,7 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
           <div className="flex items-center justify-between text-xs border-b border-slate-800 pb-2">
             <span className="text-[#fef08a] font-bold flex items-center gap-1.5">
               <UserCheck className="w-4 h-4 text-[#d4af37]" />
-              <span>Данные вашей регистрации:</span>
+              <span>Данные вашей заявки:</span>
             </span>
             <span className="text-emerald-400 font-semibold">{user.registeredAt || 'Сегодня'}</span>
           </div>
@@ -125,57 +114,17 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
           </div>
         </div>
 
-        {/* Action Controls & Fast Testing Helpers */}
+        {/* Action Controls */}
         <div className="space-y-3 pt-1">
-          <div className="flex flex-col sm:flex-row items-center gap-3">
-            <button
-              type="button"
-              onClick={handleManualCheck}
-              disabled={isChecking}
-              className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
-            >
-              <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin text-amber-400' : ''}`} />
-              <span>{isChecking ? 'Сверка с базой данных...' : '🔄 Проверить статус одобрения'}</span>
-            </button>
-
-            {/* Instant 1-click test approve */}
-            <button
-              type="button"
-              onClick={() => {
-                playSuccessChime();
-                onFastApproveCurrent();
-              }}
-              className="w-full sm:w-auto py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-black font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer hover:scale-105"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>⚡ Одобрить меня мгновенно</span>
-            </button>
-          </div>
-
-          {/* Testing shortcut to Admin Panel */}
-          <div className="bg-[#030907] border border-[#d4af37]/40 rounded-2xl p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-emerald-950 border border-emerald-500/40 flex items-center justify-center text-[#d4af37] shrink-0">
-                <KeyRound className="w-4 h-4" />
-              </div>
-              <div className="text-left">
-                <span className="font-bold text-white block">Сценарий тестирования для Администратора:</span>
-                <span className="text-slate-400 text-[11px]">Войдите под <strong>admin / admin123</strong>, чтобы увидеть эту заявку в таблице</span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                playButtonTap();
-                onOpenAdminLogin();
-              }}
-              className="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-[#d4af37] hover:bg-[#f59e0b] text-black font-bold text-xs flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer"
-            >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Войти как Администратор →</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleManualCheck}
+            disabled={isChecking}
+            className="w-full py-3.5 px-4 rounded-xl bg-[#d4af37] hover:bg-[#f59e0b] text-black font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-950/30 transition-all cursor-pointer"
+          >
+            <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
+            <span>{isChecking ? 'Сверка с базой данных...' : 'Проверить статус одобрения'}</span>
+          </button>
         </div>
 
         {/* Footer / Switch user */}
@@ -185,12 +134,12 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
             type="button"
             onClick={() => {
               playButtonTap();
-              onOpenRegisterOrLogin();
+              onLogout();
             }}
             className="text-slate-300 hover:text-white underline decoration-dotted flex items-center gap-1 cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
-            <span>Сменить аккаунт / Зарегистрировать другой номер</span>
+            <span>Выйти из аккаунта</span>
           </button>
         </div>
 

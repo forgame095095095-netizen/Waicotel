@@ -4,10 +4,9 @@ import { DashboardTab } from './components/DashboardTab';
 import { BarabanWheel } from './components/BarabanWheel';
 import { ProfileAmanaTab } from './components/ProfileAmanaTab';
 import { AdminReviewPortal } from './components/AdminReviewPortal';
-import { AdminLoginModal } from './components/AdminLoginModal';
 import { PendingApprovalScreen } from './components/PendingApprovalScreen';
+import { AuthGatewayScreen } from './components/AuthGatewayScreen';
 import { Tier2VerificationModal } from './components/Tier2VerificationModal';
-import { SmsAuthModal } from './components/SmsAuthModal';
 import { KotelDetailModal } from './components/KotelDetailModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ShariaModal } from './components/ShariaModal';
@@ -15,7 +14,6 @@ import { ReceiptUploadModal } from './components/ReceiptUploadModal';
 import { CreateKotelModal } from './components/CreateKotelModal';
 import { ShareKotelModal } from './components/ShareKotelModal';
 import { 
-  INITIAL_USER, 
   INITIAL_REGISTERED_USERS, 
   INITIAL_KOTELS, 
   INITIAL_AMANA_LOGS, 
@@ -30,7 +28,7 @@ import {
   VerificationRequest 
 } from './types';
 import { playButtonTap, playSuccessChime } from './utils/audio';
-import { Scale, CheckCircle2, Shield, Heart, HelpCircle, Phone, Lock, Sparkles, KeyRound } from 'lucide-react';
+import { Scale, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
   // 1. Users Database in localStorage
@@ -47,14 +45,14 @@ export default function App() {
     }
   });
 
-  // 2. Currently Active User
-  const [user, setUser] = useState<UserProfile>(() => {
+  // 2. Currently Active User (null means not logged in -> Auth Gateway Screen)
+  const [user, setUser] = useState<UserProfile | null>(() => {
     try {
       const saved = localStorage.getItem('wai_kotel_user');
       if (saved) return JSON.parse(saved);
-      return INITIAL_REGISTERED_USERS[0] || INITIAL_USER;
+      return null;
     } catch {
-      return INITIAL_REGISTERED_USERS[0] || INITIAL_USER;
+      return null;
     }
   });
 
@@ -86,14 +84,11 @@ export default function App() {
     }
   });
 
-  // Active Screen / Tab
+  // Active Screen / Tab for logged in user
   const [activeTab, setActiveTab] = useState<'dashboard' | 'baraban' | 'profile' | 'contract' | 'admin'>('dashboard');
   const [selectedKotelForBarabanId, setSelectedKotelForBarabanId] = useState<string>('kotel_02');
 
   // Modals
-  const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
-  const [isSmsAuthOpen, setIsSmsAuthOpen] = useState(false);
-  const [smsAuthMode, setSmsAuthMode] = useState<'login' | 'register'>('login');
   const [selectedKotelDetailId, setSelectedKotelDetailId] = useState<string | null>(null);
   const [receiptUploadData, setReceiptUploadData] = useState<{ kotelId: string; memberId: string } | null>(null);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
@@ -120,7 +115,11 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('wai_kotel_user', JSON.stringify(user));
+      if (user) {
+        localStorage.setItem('wai_kotel_user', JSON.stringify(user));
+      } else {
+        localStorage.removeItem('wai_kotel_user');
+      }
     } catch {}
   }, [user]);
 
@@ -142,114 +141,115 @@ export default function App() {
     } catch {}
   }, [verificationRequests]);
 
-  // Deep linking for kotel
-  useEffect(() => {
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      const kotelParam = urlParams.get('kotel');
-      if (kotelParam) {
-        const target = kotels.find(
-          (k) =>
-            k.inviteCode?.toLowerCase() === kotelParam.toLowerCase() ||
-            k.id?.toLowerCase() === kotelParam.toLowerCase() ||
-            k.inviteCode?.toLowerCase().replace(/[^a-z0-9]/g, '') === kotelParam.toLowerCase().replace(/[^a-z0-9]/g, '')
-        );
-        if (target) {
-          setSelectedKotelDetailId(target.id);
-          showToast(`Открыт котел «${target.title}» по ссылке-приглашению!`);
-        }
-      }
-    } catch {}
-  }, []);
-
-  // Open Tier 2 Modal
-  const handleOpenTier2Modal = (poolTitle?: string, poolAmount?: number) => {
-    if (poolTitle && poolAmount) {
-      setTier2TargetPool({ title: poolTitle, amount: poolAmount });
+  // Handler: Login Success
+  const handleSuccessLogin = (loggedInUser: UserProfile) => {
+    setUser(loggedInUser);
+    if (loggedInUser.role === 'admin' || loggedInUser.phone === '+7 (999) 000-00-00') {
+      setActiveTab('admin');
+      showToast(`Вы авторизованы как Администратор системы (+7 (999) 000-00-00)`);
     } else {
-      setTier2TargetPool({ title: 'Групповой целевой фонд', amount: 300000 });
+      setActiveTab('dashboard');
+      if (loggedInUser.registrationStatus === 'pending') {
+        showToast(`Вы вошли в систему. Ваша заявка находится на рассмотрении модератором.`);
+      } else {
+        showToast(`Добро пожаловать в Вай Котел, ${loggedInUser.fullName}!`);
+      }
     }
-    setIsTier2VerificationOpen(true);
   };
 
-  // Handler: Join Kotel (Checking Tier 2 requirement >= 300,000)
-  const handleJoinKotel = (kotelId: string, preferredSlot?: number) => {
-    const targetKotel = kotels.find((k) => k.id === kotelId);
-    const isTier2 = user.verificationTier === 2 && user.verificationStatus === 'verified';
+  // Handler: Register Success
+  const handleSuccessRegister = (newUser: UserProfile) => {
+    setUsersDb((prev) => [newUser, ...prev]);
+    setUser(newUser);
+    setActiveTab('dashboard');
+    showToast(`Заявка успешно отправлена на рассмотрение администратору!`);
+  };
 
-    if (targetKotel && targetKotel.totalPool >= 300000 && !isTier2) {
-      handleOpenTier2Modal(targetKotel.title, targetKotel.totalPool);
+  // Handler: Logout
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('wai_kotel_user');
+    playButtonTap();
+    showToast('Вы вышли из учетной записи');
+  };
+
+  // Handler: Refresh user status from DB
+  const handleRefreshUserStatus = () => {
+    if (!user) return;
+    const latest = usersDb.find((u) => u.id === user.id || u.phone === user.phone);
+    if (latest) {
+      setUser(latest);
+      if (latest.registrationStatus === 'approved') {
+        playSuccessChime();
+        showToast('Поздравляем! Ваша заявка одобрена администратором!');
+      } else {
+        showToast('Статус: По-прежнему «На рассмотрении». Ожидайте проверки модератором.');
+      }
+    }
+  };
+
+  // Handler: Join Kotel
+  const handleJoinKotel = (kotelId: string, customSlot?: number) => {
+    if (!user) return;
+
+    if (user.registrationStatus === 'pending') {
+      showToast('Ваша заявка находится на рассмотрении. Доступ откроется после одобрения.');
       return;
     }
 
-    if (user.verificationStatus === 'pending') {
-      showToast('Ваша заявка на верификацию находится на рассмотрении у администратора (В ожидании).');
+    const targetKotel = kotels.find((k) => k.id === kotelId);
+    if (!targetKotel) return;
+
+    // Check Tier 2 requirement
+    if (targetKotel.requiresTier2 && (user.verificationTier < 2 || user.verificationStatus !== 'verified')) {
+      handleOpenTier2Modal(targetKotel.title, targetKotel.monthlyContribution);
+      return;
     }
 
-    let assignedSlotNumber: number | null = null;
-    let joinedKotelTitle = '';
+    // Assign slot
+    const occupiedDrawNumbers = targetKotel.members.map((m) => m.drawNumber).filter(Boolean) as number[];
+    let assignedNumber = customSlot;
+    if (!assignedNumber) {
+      for (let i = 1; i <= targetKotel.totalMembers; i++) {
+        if (!occupiedDrawNumbers.includes(i)) {
+          assignedNumber = i;
+          break;
+        }
+      }
+    }
+    if (!assignedNumber) assignedNumber = targetKotel.members.length + 1;
+
+    const newMember: KotelMember = {
+      id: `member_${Date.now()}`,
+      name: user.fullName,
+      phone: user.phone,
+      city: user.city,
+      occupation: user.occupation,
+      isOccupationVerified: user.isOccupationVerified,
+      isPassportVerified: user.isPassportVerified,
+      isGuarantorVerified: user.isGuarantorVerified,
+      drawNumber: assignedNumber,
+      monthStatus: 'pending',
+      paidAmount: 0,
+      isCurrentUser: true,
+      avatarUrl: user.avatarUrl,
+      amanaScore: user.amanaScore,
+      guarantorName: user.guarantorName || 'Кафил',
+      guarantorPhone: user.guarantorPhone || '',
+      isGuarantorConfirmed: user.isGuarantorVerified,
+    };
 
     setKotels((prev) =>
       prev.map((k) => {
         if (k.id === kotelId) {
-          joinedKotelTitle = k.title;
-          const isAlreadyIn = k.members.some((m) => m.id === user.id);
-          if (isAlreadyIn) return k;
-
-          const isManual = k.queueType === 'manual';
-          const occupiedSlots = new Set(k.members.map((m) => m.drawNumber).filter((n): n is number => typeof n === 'number'));
-
-          if (isManual) {
-            if (preferredSlot && preferredSlot >= 1 && preferredSlot <= k.totalMembers && !occupiedSlots.has(preferredSlot)) {
-              assignedSlotNumber = preferredSlot;
-            } else {
-              for (let i = 1; i <= k.totalMembers; i++) {
-                if (!occupiedSlots.has(i)) {
-                  assignedSlotNumber = i;
-                  break;
-                }
-              }
-            }
-          }
-
-          const newMember: KotelMember = {
-            id: user.id,
-            name: `${user.fullName} (Вы)`,
-            phone: user.phone,
-            city: user.city,
-            drawNumber: assignedSlotNumber,
-            monthStatus: 'pending',
-            paidAmount: 0,
-            amanaScore: user.amanaScore,
-            isGuarantorConfirmed: true,
-            guarantorName: user.guarantorName,
-            guarantorPhone: user.guarantorPhone,
-            isCurrentUser: true,
-          };
-
           const updatedMembers = [...k.members, newMember];
-          const isFull = updatedMembers.length >= k.totalMembers;
-
-          let newStatus = k.status;
-          let drawCompleted = k.drawCompleted;
-
-          if (isFull) {
-            if (isManual) {
-              newStatus = 'active';
-              drawCompleted = true;
-            } else {
-              newStatus = 'draw_ready';
-              drawCompleted = false;
-            }
-          }
-
+          const newStatus = updatedMembers.length >= k.totalMembers ? 'draw_ready' : 'gathering';
           return {
             ...k,
             members: updatedMembers,
             isUserJoined: true,
-            userDrawNumber: assignedSlotNumber ?? k.userDrawNumber,
+            userDrawNumber: assignedNumber,
             status: newStatus,
-            drawCompleted,
           };
         }
         return k;
@@ -257,35 +257,98 @@ export default function App() {
     );
 
     playSuccessChime();
-    if (assignedSlotNumber !== null) {
-      showToast(`Вы успешно вступили в «${joinedKotelTitle}» и заняли #${assignedSlotNumber}-е место в очереди!`);
+    showToast(`Вы успешно вступили в «${targetKotel.title}» (Очередь #${assignedNumber})!`);
+  };
+
+  // Handler: Moderator excludes member from Kotel before start
+  const handleExcludeMember = (kotelId: string, memberId: string) => {
+    let excludedName = '';
+    let freedSlot: number | null = null;
+
+    setKotels((prev) =>
+      prev.map((k) => {
+        if (k.id === kotelId) {
+          const targetMember = k.members.find((m) => m.id === memberId);
+          if (targetMember) {
+            excludedName = targetMember.name;
+            freedSlot = targetMember.drawNumber;
+          }
+
+          const updatedMembers = k.members.filter((m) => m.id !== memberId);
+          const isUserJoined = user ? updatedMembers.some((m) => m.isCurrentUser || m.id === user.id) : false;
+          const newStatus = updatedMembers.length < k.totalMembers && k.status === 'draw_ready' ? 'gathering' : k.status;
+
+          return {
+            ...k,
+            members: updatedMembers,
+            isUserJoined,
+            status: newStatus,
+          };
+        }
+        return k;
+      })
+    );
+
+    playButtonTap();
+    if (freedSlot) {
+      showToast(`Участник «${excludedName || 'Участник'}» исключен из котла. Место #${freedSlot} освобождено!`);
     } else {
-      showToast('Вы успешно присоединились к группе! Ждем заполнения всех мест для жеребьевки.');
+      showToast(`Участник «${excludedName || 'Участник'}» успешно исключен из котла.`);
     }
   };
 
-  // Handler: Register New User -> saved to DB with status: 'pending'
-  const handleSuccessRegister = (newUser: UserProfile) => {
-    setUsersDb((prev) => [newUser, ...prev.filter((u) => u.id !== newUser.id)]);
-    setUser(newUser);
-    playSuccessChime();
-    showToast(`Заявка на регистрацию «${newUser.fullName}» принята! Ожидайте подтверждения.`);
+  // Handler: Update Member status directly
+  const handleUpdateMemberStatus = (kotelId: string, memberId: string, newStatus: PaymentStatus) => {
+    setKotels((prev) =>
+      prev.map((k) => {
+        if (k.id === kotelId) {
+          const updatedMembers = k.members.map((m) => (m.id === memberId ? { ...m, monthStatus: newStatus } : m));
+          return { ...k, members: updatedMembers };
+        }
+        return k;
+      })
+    );
   };
 
-  // Handler: Login existing user
-  const handleSuccessLogin = (loggedInUser: UserProfile) => {
-    // Make sure we have latest status from usersDb
-    const fromDb = usersDb.find((u) => u.id === loggedInUser.id || u.phone === loggedInUser.phone) || loggedInUser;
-    setUser(fromDb);
-    playSuccessChime();
-    if (fromDb.registrationStatus === 'pending') {
-      showToast(`Вход выполнен. Ваша заявка находится на рассмотрении у администратора.`);
-    } else {
-      showToast(`С возвращением, ${fromDb.fullName}!`);
+  // Handler: Create new Kotel
+  const handleCreateKotel = (newKotel: Kotel) => {
+    setKotels((prev) => [newKotel, ...prev]);
+    showToast(`Котел «${newKotel.title}» успешно создан! Открыт набор участников.`);
+  };
+
+  // Handler: Open Tier 2 Modal
+  const handleOpenTier2Modal = (poolTitle = 'Премиум котел (300k+)', poolAmount = 300000) => {
+    setTier2TargetPool({ title: poolTitle, amount: poolAmount });
+    setIsTier2VerificationOpen(true);
+  };
+
+  // Handler: Submit Tier 2 Verification Request
+  const handleSubmitVerificationRequest = (requestData: Omit<VerificationRequest, 'id' | 'createdAt' | 'status'>) => {
+    const newReqId = `req_${Date.now()}`;
+    const nowStr = new Date().toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    const newRequest: VerificationRequest = {
+      ...requestData,
+      id: newReqId,
+      submittedAt: nowStr,
+      status: 'pending',
+    };
+
+    setVerificationRequests((prev) => [newRequest, ...prev]);
+    if (user) {
+      setUser((prev) => (prev ? { ...prev, verificationStatus: 'pending' } : null));
     }
+
+    playSuccessChime();
+    showToast('Заявка на верификацию 300k+ отправлена на проверку администратору!');
   };
 
-  // Handler: Admin Approves User Registration
+  // Handler: Admin approves user registration
   const handleApproveUserRegistration = (userId: string) => {
     const nowStr = new Date().toLocaleDateString('ru-RU', {
       day: '2-digit',
@@ -295,88 +358,30 @@ export default function App() {
       minute: '2-digit',
     });
 
-    let targetUserName = '';
-
     setUsersDb((prev) =>
-      prev.map((u) => {
-        if (u.id === userId) {
-          targetUserName = u.fullName;
-          return {
-            ...u,
-            registrationStatus: 'approved',
-            registrationApprovedAt: `Сегодня, ${nowStr.split(',')[1]?.trim() || '14:30'}`,
-            isGuarantorVerified: true,
-          };
-        }
-        return u;
-      })
+      prev.map((u) => (u.id === userId ? { ...u, registrationStatus: 'approved', registrationApprovedAt: nowStr } : u))
     );
 
-    if (user.id === userId) {
-      setUser((prev) => ({
-        ...prev,
-        registrationStatus: 'approved',
-        registrationApprovedAt: `Сегодня, ${nowStr.split(',')[1]?.trim() || '14:30'}`,
-        isGuarantorVerified: true,
-      }));
+    if (user && user.id === userId) {
+      setUser((prev) => (prev ? { ...prev, registrationStatus: 'approved', registrationApprovedAt: nowStr } : null));
     }
 
     playSuccessChime();
-    showToast(`Заявка пользователя «${targetUserName || userId}» одобрена! Доступ открыт.`);
+    showToast(`Заявка пользователя одобрена! Участник получил доступ к Дашборду.`);
   };
 
-  // Handler: Admin Rejects User Registration
+  // Handler: Admin rejects user registration
   const handleRejectUserRegistration = (userId: string, reason: string) => {
     setUsersDb((prev) =>
-      prev.map((u) =>
-        u.id === userId
-          ? {
-              ...u,
-              registrationStatus: 'rejected',
-              registrationRejectionReason: reason,
-            }
-          : u
-      )
+      prev.map((u) => (u.id === userId ? { ...u, registrationStatus: 'rejected', rejectionReason: reason } : u))
     );
 
-    if (user.id === userId) {
-      setUser((prev) => ({
-        ...prev,
-        registrationStatus: 'rejected',
-        registrationRejectionReason: reason,
-      }));
+    if (user && user.id === userId) {
+      setUser((prev) => (prev ? { ...prev, registrationStatus: 'rejected', rejectionReason: reason } : null));
     }
 
     playButtonTap();
-    showToast('Заявка на регистрацию отклонена. Причина сохранена.');
-  };
-
-  // Handler: Switch active user directly (for rapid admin testing)
-  const handleSwitchToUser = (targetUser: UserProfile) => {
-    const latest = usersDb.find((u) => u.id === targetUser.id) || targetUser;
-    setUser(latest);
-    if (latest.registrationStatus === 'approved') {
-      setActiveTab('dashboard');
-    }
-    playSuccessChime();
-    showToast(`Переключен аккаунт: ${latest.fullName} (${latest.registrationStatus === 'approved' ? 'Одобрен' : 'В ожидании'})`);
-  };
-
-  // Handler: 1-Click Fast Approve current user
-  const handleFastApproveCurrent = () => {
-    handleApproveUserRegistration(user.id);
-    setActiveTab('dashboard');
-  };
-
-  // Handler: Submit Verification Request from Tier2 Modal -> Admin Queue
-  const handleSubmitVerificationRequest = (newRequest: VerificationRequest, updatedUser: UserProfile) => {
-    setVerificationRequests((prev) => [
-      newRequest,
-      ...prev.filter((r) => r.id !== newRequest.id && r.userId !== updatedUser.id),
-    ]);
-    setUser(updatedUser);
-    playSuccessChime();
-    showToast('Заявка отправлена на проверку! Статус: «В ожидании». Войдите как Администратор (admin/admin123) для одобрения.');
+    showToast(`Заявка отклонена. Причина зафиксирована в базе.`);
   };
 
   // Handler: Admin approves Tier 2 request
@@ -394,22 +399,43 @@ export default function App() {
     );
 
     const targetReq = verificationRequests.find((r) => r.id === requestId);
-    if (targetReq && (targetReq.userId === user.id || targetReq.userPhone === user.phone || user.verificationStatus === 'pending')) {
-      setUser((prev) => ({
-        ...prev,
-        verificationTier: 2,
-        verificationStatus: 'verified',
-        isGuarantorVerified: true,
-        isPassportVerified: true,
-        isGuarantorSmsConfirmed: true,
-        verificationApprovedAt: nowStr,
-        amanaScore: Math.min(150, Math.max(prev.amanaScore, 125)),
-      }));
+    if (targetReq) {
+      setUsersDb((prev) =>
+        prev.map((u) => {
+          if (u.id === targetReq.userId || u.phone === targetReq.userPhone) {
+            return {
+              ...u,
+              verificationTier: 2,
+              verificationStatus: 'verified',
+              isGuarantorVerified: true,
+              isPassportVerified: true,
+              isGuarantorSmsConfirmed: true,
+              verificationApprovedAt: nowStr,
+              amanaScore: Math.min(150, Math.max(u.amanaScore, 125)),
+            };
+          }
+          return u;
+        })
+      );
+
+      if (user && (user.id === targetReq.userId || user.phone === targetReq.userPhone)) {
+        setUser((prev) =>
+          prev
+            ? {
+                ...prev,
+                verificationTier: 2,
+                verificationStatus: 'verified',
+                isGuarantorVerified: true,
+                isPassportVerified: true,
+                isGuarantorSmsConfirmed: true,
+                verificationApprovedAt: nowStr,
+                amanaScore: Math.min(150, Math.max(prev.amanaScore, 125)),
+              }
+            : null
+        );
+      }
       playSuccessChime();
-      showToast(`Заявка пользователя «${targetReq.userName}» одобрена! Присвоен статус «Уровень 2» ★`);
-    } else {
-      playSuccessChime();
-      showToast(`Заявка #${requestId} успешно одобрена в панели администратора!`);
+      showToast(`Заявка пользователя «${targetReq.userName}» одобрена! Присвоен статус «Верифицирован 🛡️»`);
     }
   };
 
@@ -428,59 +454,17 @@ export default function App() {
     );
 
     const targetReq = verificationRequests.find((r) => r.id === requestId);
-    if (targetReq && (targetReq.userId === user.id || targetReq.userPhone === user.phone)) {
-      setUser((prev) => ({
-        ...prev,
-        verificationStatus: 'rejected',
-      }));
+    if (targetReq && user && (targetReq.userId === user.id || targetReq.userPhone === user.phone)) {
+      setUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              verificationStatus: 'rejected',
+            }
+          : null
+      );
     }
     showToast(`Заявка отклонена. Причина зафиксирована.`);
-  };
-
-  // Handler: Demo mode switcher (Уровень 1, В ожидании, Уровень 2, Админ)
-  const handleSwitchUserMode = (mode: 'tier1' | 'pending' | 'tier2' | 'admin') => {
-    playButtonTap();
-    if (mode === 'tier1') {
-      setUser((prev) => ({
-        ...prev,
-        registrationStatus: 'approved',
-        verificationTier: 1,
-        verificationStatus: 'unverified',
-        isGuarantorVerified: false,
-        isPassportVerified: false,
-        amanaScore: 75,
-      }));
-      setActiveTab('dashboard');
-      showToast('Режим переключен: Базовый участник (Одобрен, Уровень 1)');
-    } else if (mode === 'pending') {
-      setUser((prev) => ({
-        ...prev,
-        registrationStatus: 'pending',
-        registeredAt: 'Сегодня, 14:00',
-        verificationTier: 1,
-        verificationStatus: 'pending',
-        amanaScore: 75,
-      }));
-      setActiveTab('dashboard');
-      showToast('Режим переключен: Заявка на регистрации (В ожидании ⏳)');
-    } else if (mode === 'tier2') {
-      setUser((prev) => ({
-        ...prev,
-        registrationStatus: 'approved',
-        verificationTier: 2,
-        verificationStatus: 'verified',
-        isGuarantorVerified: true,
-        isPassportVerified: true,
-        isGuarantorSmsConfirmed: true,
-        verificationApprovedAt: 'Сегодня, 14:15',
-        amanaScore: 125,
-      }));
-      setActiveTab('dashboard');
-      showToast('Режим переключен: Полная верификация (Уровень 2 ★)');
-    } else if (mode === 'admin') {
-      setActiveTab('admin');
-      showToast('Открыта Панель Администратора (admin / admin123)');
-    }
   };
 
   // Handler: Apply Draw Results from Baraban
@@ -488,7 +472,7 @@ export default function App() {
     setKotels((prev) =>
       prev.map((k) => {
         if (k.id === kotelId) {
-          const userMember = updatedMembers.find((m) => m.isCurrentUser || m.id === user.id);
+          const userMember = user ? updatedMembers.find((m) => m.isCurrentUser || m.id === user.id) : null;
           return {
             ...k,
             members: updatedMembers,
@@ -532,11 +516,17 @@ export default function App() {
       })
     );
 
-    setUser((prev) => ({
-      ...prev,
-      amanaScore: Math.min(150, prev.amanaScore + 15),
-      totalSaved: prev.totalSaved + (kotels.find((k) => k.id === kotelId)?.monthlyContribution || 30000),
-    }));
+    if (user) {
+      setUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              amanaScore: Math.min(150, prev.amanaScore + 15),
+              totalSaved: prev.totalSaved + (kotels.find((k) => k.id === kotelId)?.monthlyContribution || 30000),
+            }
+          : null
+      );
+    }
 
     const newLog: AmanaScoreLog = {
       id: `log_${Date.now()}`,
@@ -552,47 +542,38 @@ export default function App() {
     showToast('Взнос подтвержден! Вам начислено +15 баллов рейтинга Аманат');
   };
 
-  // Handler: Update Member status directly
-  const handleUpdateMemberStatus = (kotelId: string, memberId: string, newStatus: PaymentStatus) => {
-    setKotels((prev) =>
-      prev.map((k) => {
-        if (k.id === kotelId) {
-          const updatedMembers = k.members.map((m) => (m.id === memberId ? { ...m, monthStatus: newStatus } : m));
-          return { ...k, members: updatedMembers };
-        }
-        return k;
-      })
-    );
-  };
-
-  // Handler: Create new Kotel
-  const handleCreateKotel = (newKotel: Kotel) => {
-    setKotels((prev) => [newKotel, ...prev]);
-    showToast(`Котел «${newKotel.title}» успешно создан! Открыт набор участников.`);
-  };
-
-  // Reset demo data
-  const handleResetDemoData = () => {
-    localStorage.removeItem('wai_kotel_users_db');
-    localStorage.removeItem('wai_kotel_user');
-    localStorage.removeItem('wai_kotel_pools');
-    localStorage.removeItem('wai_kotel_logs');
-    localStorage.removeItem('wai_kotel_requests');
-    setUsersDb(INITIAL_REGISTERED_USERS);
-    setUser(INITIAL_REGISTERED_USERS[0]);
-    setKotels(INITIAL_KOTELS);
-    setAmanaLogs(INITIAL_AMANA_LOGS);
-    setVerificationRequests(INITIAL_VERIFICATION_REQUESTS);
-    playSuccessChime();
-    showToast('База данных и локальные данные сброшены к начальным');
-  };
-
   const pendingRequestsCount = verificationRequests.filter((r) => r.status === 'pending').length;
   const pendingRegistrationsCount = usersDb.filter((u) => u.registrationStatus === 'pending').length;
   const selectedKotelForDetail = kotels.find((k) => k.id === selectedKotelDetailId);
 
-  // Check if current user is blocked by Pending status
-  const isUserPending = user.registrationStatus === 'pending' && activeTab !== 'admin';
+  // 🛑 SCREEN 1: AUTH GATEWAY (If not authenticated)
+  if (!user) {
+    return (
+      <>
+        {toastMessage && (
+          <div className="fixed bottom-6 right-6 z-50 bg-[#0d2a20] border-2 border-[#d4af37] text-[#fef08a] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-bounce">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <span className="text-xs sm:text-sm font-semibold">{toastMessage}</span>
+          </div>
+        )}
+        <AuthGatewayScreen
+          usersDb={usersDb}
+          onSuccessLogin={handleSuccessLogin}
+          onSuccessRegister={handleSuccessRegister}
+          onOpenSharia={() => setIsShariaOpen(true)}
+        />
+        {/* Sharia Modal */}
+        <ShariaModal
+          isOpen={isShariaOpen}
+          onClose={() => setIsShariaOpen(false)}
+          userName="Участник"
+        />
+      </>
+    );
+  }
+
+  const isAdmin = user.role === 'admin' || user.phone === '+7 (999) 000-00-00';
+  const isUserPending = user.registrationStatus === 'pending';
 
   return (
     <div className="min-h-screen bg-[#070d0b] text-slate-100 flex flex-col justify-between selection:bg-[#d4af37]/30 selection:text-[#fef08a]">
@@ -604,15 +585,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenSharia={() => setIsShariaOpen(true)}
-        onOpenOnboarding={() => setIsOnboardingOpen(true)}
-        onOpenTier2Verification={() => handleOpenTier2Modal()}
-        onOpenSmsAuth={(mode = 'login') => {
-          setSmsAuthMode(mode);
-          setIsSmsAuthOpen(true);
-        }}
-        onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
-        onSwitchUserMode={handleSwitchUserMode}
-        onResetDemoData={handleResetDemoData}
+        onLogout={handleLogout}
         pendingRequestsCount={pendingRequestsCount}
         pendingRegistrationsCount={pendingRegistrationsCount}
       />
@@ -628,29 +601,38 @@ export default function App() {
           </div>
         )}
 
-        {/* 🛑 BLOCKING SCREEN: If current user is in 'pending' registration status (except when admin tab is opened) */}
-        {isUserPending ? (
-          <PendingApprovalScreen
-            user={user}
-            onRefreshStatus={() => {
-              // Refresh user data from usersDb
-              const latest = usersDb.find((u) => u.id === user.id) || user;
-              setUser(latest);
-              if (latest.registrationStatus === 'approved') {
-                playSuccessChime();
-                showToast('Поздравляем! Ваша заявка одобрена администратором!');
-              } else {
-                showToast('Статус заявки: По-прежнему «На рассмотрении». Администратор проверяет данные.');
+        {/* 🛑 SCREEN 3: ADMIN PORTAL (Only for Admin special number +7 999 000-00-00) */}
+        {isAdmin ? (
+          <AdminReviewPortal
+            usersDb={usersDb}
+            onApproveUserRegistration={handleApproveUserRegistration}
+            onRejectUserRegistration={handleRejectUserRegistration}
+            onSwitchToUser={(targetUser) => {
+              setUser(targetUser);
+              setActiveTab('dashboard');
+              showToast(`Переключено на профиль: ${targetUser.fullName}`);
+            }}
+            requests={verificationRequests}
+            onApproveRequest={handleApproveTier2Request}
+            onRejectRequest={handleRejectTier2Request}
+            onSelectKotel={(title) => {
+              const found = kotels.find((k) => k.title.toLowerCase().includes(title.toLowerCase()));
+              if (found) {
+                setSelectedKotelDetailId(found.id);
               }
             }}
-            onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
-            onOpenRegisterOrLogin={() => {
-              setSmsAuthMode('login');
-              setIsSmsAuthOpen(true);
-            }}
-            onFastApproveCurrent={handleFastApproveCurrent}
+            currentUser={user}
+            onExitAdmin={handleLogout}
+          />
+        ) : isUserPending ? (
+          /* 🛑 PENDING APPROVAL SCREEN (If regular user registration status is pending) */
+          <PendingApprovalScreen
+            user={user}
+            onRefreshStatus={handleRefreshUserStatus}
+            onLogout={handleLogout}
           />
         ) : (
+          /* 🛑 SCREEN 2: MAIN DASHBOARD (For approved users) */
           <>
             {/* Tab 1: Dashboard & Available Pools */}
             {activeTab === 'dashboard' && (
@@ -732,14 +714,14 @@ export default function App() {
                       <strong>3. Социальная гарантия Кафаля:</strong> В случае неплатежеспособности участника его поручитель (Кафил) обязуется исполнить обязательство в полном объеме.
                     </p>
                     <p>
-                      <strong>4. Электронная подпись:</strong> Договор закреплен двухфакторным SMS-подтверждением участника {user.fullName} ({user.phone}) и поручителя {user.guarantorName} ({user.guarantorPhone}).
+                      <strong>4. Электронная подпись:</strong> Договор закреплен SMS-подтверждением участника {user.fullName} ({user.phone}) и поручителя {user.guarantorName || 'Кафил'} ({user.guarantorPhone}).
                     </p>
                   </div>
 
                   <div className="flex items-center justify-between pt-2">
                     <button
                       onClick={() => setIsShariaOpen(true)}
-                      className="text-xs text-[#d4af37] hover:underline font-semibold"
+                      className="text-xs text-[#d4af37] hover:underline font-semibold cursor-pointer"
                     >
                       Читать подробное богословское заключение (Фетву) →
                     </button>
@@ -757,58 +739,15 @@ export default function App() {
           </>
         )}
 
-        {/* Tab 5: Admin Review Portal (Always accessible for review/approvals) */}
-        {activeTab === 'admin' && (
-          <AdminReviewPortal
-            usersDb={usersDb}
-            onApproveUserRegistration={handleApproveUserRegistration}
-            onRejectUserRegistration={handleRejectUserRegistration}
-            onSwitchToUser={handleSwitchToUser}
-            requests={verificationRequests}
-            onApproveRequest={handleApproveTier2Request}
-            onRejectRequest={handleRejectTier2Request}
-            onSelectKotel={(title) => {
-              const found = kotels.find((k) => k.title.toLowerCase().includes(title.toLowerCase()));
-              if (found) {
-                setSelectedKotelDetailId(found.id);
-              } else {
-                setActiveTab('dashboard');
-              }
-            }}
-            currentUser={user}
-            onExitAdmin={() => setActiveTab('dashboard')}
-          />
-        )}
-
       </main>
 
-      {/* Admin Login Modal (admin / admin123) */}
-      <AdminLoginModal
-        isOpen={isAdminLoginOpen}
-        onClose={() => setIsAdminLoginOpen(false)}
-        onSuccessLogin={() => {
-          setActiveTab('admin');
-          showToast('Вы успешно вошли в Панель Администратора!');
-        }}
-      />
-
-      {/* SMS Auth & Registration Modal */}
-      <SmsAuthModal
-        isOpen={isSmsAuthOpen}
-        onClose={() => setIsSmsAuthOpen(false)}
-        usersDb={usersDb}
-        initialMode={smsAuthMode}
-        onSuccessRegister={handleSuccessRegister}
-        onSuccessLogin={handleSuccessLogin}
-        onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
-      />
-
       {/* Kotel Detail Modal */}
-      {selectedKotelForDetail && (
+      {selectedKotelForDetail && user && (
         <KotelDetailModal
           isOpen={!!selectedKotelForDetail}
           onClose={() => setSelectedKotelDetailId(null)}
           kotel={selectedKotelForDetail}
+          user={user}
           onJoinKotel={handleJoinKotel}
           onOpenReceiptUpload={(kotelId, memberId) => setReceiptUploadData({ kotelId, memberId })}
           onOpenBaraban={(kotelId) => {
@@ -817,6 +756,7 @@ export default function App() {
             setActiveTab('baraban');
           }}
           onUpdateMemberStatus={handleUpdateMemberStatus}
+          onExcludeMember={handleExcludeMember}
           onOpenShareKotel={(kotel) => setShareKotelTarget(kotel)}
         />
       )}
@@ -842,63 +782,73 @@ export default function App() {
       )}
 
       {/* Onboarding Modal */}
-      <OnboardingModal
-        isOpen={isOnboardingOpen}
-        onClose={() => setIsOnboardingOpen(false)}
-        user={user}
-        onUpdateUser={(updated) => {
-          setUser(updated);
-          setUsersDb((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-          showToast('Анкета обновлена!');
-        }}
-      />
+      {user && (
+        <OnboardingModal
+          isOpen={isOnboardingOpen}
+          onClose={() => setIsOnboardingOpen(false)}
+          user={user}
+          onUpdateUser={(updated) => {
+            setUser(updated);
+            setUsersDb((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+            showToast('Анкета обновлена!');
+          }}
+        />
+      )}
 
       {/* Sharia Modal */}
       <ShariaModal
         isOpen={isShariaOpen}
         onClose={() => setIsShariaOpen(false)}
-        userName={user.fullName}
+        userName={user?.fullName || 'Участник'}
       />
 
       {/* Create Kotel Modal */}
-      <CreateKotelModal
-        isOpen={isCreateKotelOpen}
-        onClose={() => setIsCreateKotelOpen(false)}
-        user={user}
-        onCreateKotel={handleCreateKotel}
-        onRequireTier2Verification={() => {
-          setIsCreateKotelOpen(false);
-          handleOpenTier2Modal('Создаваемый пул (300k+)', 300000);
-        }}
-      />
+      {user && (
+        <CreateKotelModal
+          isOpen={isCreateKotelOpen}
+          onClose={() => setIsCreateKotelOpen(false)}
+          user={user}
+          onCreateKotel={handleCreateKotel}
+          onRequireTier2Verification={() => {
+            setIsCreateKotelOpen(false);
+            handleOpenTier2Modal('Создаваемый пул (300k+)', 300000);
+          }}
+        />
+      )}
 
       {/* Tier 2 Progressive Verification Modal */}
-      <Tier2VerificationModal
-        isOpen={isTier2VerificationOpen}
-        onClose={() => setIsTier2VerificationOpen(false)}
-        user={user}
-        targetPoolTitle={tier2TargetPool?.title}
-        targetPoolAmount={tier2TargetPool?.amount}
-        onSubmitVerification={handleSubmitVerificationRequest}
-        onFastApprove={() => {
-          setIsTier2VerificationOpen(false);
-          const existingReq = verificationRequests.find((r) => r.userId === user.id);
-          if (existingReq) {
-            handleApproveTier2Request(existingReq.id);
-          } else {
-            setUser((prev) => ({
-              ...prev,
-              verificationTier: 2,
-              verificationStatus: 'verified',
-              isGuarantorVerified: true,
-              isPassportVerified: true,
-              isGuarantorSmsConfirmed: true,
-              amanaScore: 125,
-            }));
-            showToast('Уровень 2 успешно подтвержден!');
-          }
-        }}
-      />
+      {user && (
+        <Tier2VerificationModal
+          isOpen={isTier2VerificationOpen}
+          onClose={() => setIsTier2VerificationOpen(false)}
+          user={user}
+          targetPoolTitle={tier2TargetPool?.title}
+          targetPoolAmount={tier2TargetPool?.amount}
+          onSubmitVerification={handleSubmitVerificationRequest}
+          onFastApprove={() => {
+            setIsTier2VerificationOpen(false);
+            const existingReq = verificationRequests.find((r) => r.userId === user.id);
+            if (existingReq) {
+              handleApproveTier2Request(existingReq.id);
+            } else {
+              setUser((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      verificationTier: 2,
+                      verificationStatus: 'verified',
+                      isGuarantorVerified: true,
+                      isPassportVerified: true,
+                      isGuarantorSmsConfirmed: true,
+                      amanaScore: 125,
+                    }
+                  : null
+              );
+              showToast('Уровень 2 успешно подтвержден!');
+            }
+          }}
+        />
+      )}
 
       {/* Footer */}
       <footer className="border-t border-[#d4af37]/20 bg-[#06110d] py-6 px-4 text-xs text-slate-400">
@@ -909,11 +859,11 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4 text-[11px] text-slate-500">
-            <button onClick={() => setIsShariaOpen(true)} className="hover:text-slate-300 transition-colors">
+            <button onClick={() => setIsShariaOpen(true)} className="hover:text-slate-300 transition-colors cursor-pointer">
               Стандарты AAOIFI
             </button>
             <span>•</span>
-            <button onClick={() => setIsShariaOpen(true)} className="hover:text-slate-300 transition-colors">
+            <button onClick={() => setIsShariaOpen(true)} className="hover:text-slate-300 transition-colors cursor-pointer">
               0% Риба и Гарантия ВК
             </button>
             <span>•</span>
